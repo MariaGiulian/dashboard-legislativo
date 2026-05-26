@@ -1,0 +1,229 @@
+/**
+ * Scraper para a Câmara Municipal de Porto Alegre
+ *
+ * Site oficial: https://www.camarapoa.rs.gov.br
+ * A Câmara Municipal de POA não disponibiliza uma API REST pública documentada.
+ * Este módulo faz web scraping das páginas de busca de proposições.
+ *
+ * ATENÇÃO: Scrapers são frágeis a mudanças de layout.
+ * Se as buscas pararem de funcionar, inspecione:
+ *   https://www.camarapoa.rs.gov.br/pesquisa-de-proposicoes
+ * e atualize os seletores CSS abaixo.
+ */
+
+import axios from "axios";
+import * as cheerio from "cheerio";
+import type { Element } from "domhandler";
+import { type CamaraPOAProposicao, type Proposicao } from "@/types";
+import { generatePoaId, getDefaultHeaders, sleep } from "@/lib/utils";
+
+const BASE_URL = "https://www.camarapoa.rs.gov.br";
+const SEARCH_URL = `${BASE_URL}/pesquisa-de-proposicoes`;
+const REQUEST_DELAY_MS = 1000; // mais conservador por ser scraping
+
+const client = axios.create({
+  timeout: 20_000,
+  headers: {
+    ...getDefaultHeaders(),
+    // Simula um navegador para não ser bloqueado
+    "User-Agent":
+      "Mozilla/5.0 (compatible; LegislaMonitor/1.0; +https://github.com/seu-usuario/legisla-monitor)",
+    Accept:
+      "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "pt-BR,pt;q=0.9",
+  },
+});
+
+// ─── Interface pública ────────────────────────────────────────────────────────
+
+/**
+ * Busca proposições da Câmara Municipal de POA por palavra-chave.
+ *
+ * Tenta os endpoints em ordem. Se o site mudar e todos falharem,
+ * retorna array vazio e loga o erro para que possa ser corrigido.
+ *
+ * @param keyword - Termo de busca
+ * @returns Lista de proposições normalizadas
+ */
+export async function buscarProposicoesPOA(keyword: string): Promise<Proposicao[]> {
+  try {
+    const raw = await scrapeSearchResults(keyword);
+    return raw.map(normalizarProposicaoPOA);
+  } catch (error) {
+    // Falha silenciosa com log — scraping pode quebrar sem aviso
+    console.warn(
+      `[CâmaraPOA] Busca por "${keyword}" falhou:`,
+      error instanceof Error ? error.message : error
+    );
+    return [];
+  }
+}
+
+/**
+ * Busca proposições para múltiplas keywords.
+ */
+export async function buscarProposicoesPOAPorKeywords(
+  keywords: string[]
+): Promise<Proposicao[]> {
+  const resultados: Proposicao[] = [];
+  const idsSeen = new Set<string>();
+
+  for (const keyword of keywords) {
+    const proposicoes = await buscarProposicoesPOA(keyword);
+
+    for (const p of proposicoes) {
+      if (!idsSeen.has(p.id)) {
+        idsSeen.add(p.id);
+        resultados.push(p);
+      }
+    }
+
+    await sleep(REQUEST_DELAY_MS);
+  }
+
+  return resultados;
+}
+
+// ─── Scraping ─────────────────────────────────────────────────────────────────
+
+/** Acessa a página de busca e extrai os resultados */
+async function scrapeSearchResults(keyword: string): Promise<CamaraPOAProposicao[]> {
+  const response = await client.get(SEARCH_URL, {
+    params: {
+      tipo: "",
+      numero: "",
+      ano: "",
+      assunto: keyword,
+      autor: "",
+    },
+  });
+
+  return parseSearchPage(response.data, keyword);
+}
+
+/**
+ * Parseia o HTML da página de resultados usando seletores Cheerio.
+ *
+ * Estrutura esperada (inspecionada em 2024-2025):
+ *   <table class="table"> ou <ul class="lista-proposicoes">
+ *     <tr> ou <li> com dados de cada proposição
+ *
+ * Seletores alternativos são tentados em sequência para robustez.
+ */
+function parseSearchPage(html: string, keyword: string): CamaraPOAProposicao[] {
+  const $ = cheerio.load(html);
+  const resultados: CamaraPOAProposicao[] = [];
+
+  // Tenta seletor de tabela (layout mais comum)
+  const rows = $("table.table tbody tr, .resultado-proposicoes tr").toArray();
+
+  if (rows.length > 0) {
+    rows.forEach((row) => {
+      const cells = $(row).find("td");
+      if (cells.length < 3) return;
+
+      const tipo = $(cells[0]).text().trim();
+      const numeroAno = $(cells[1]).text().trim(); // ex: "001/2025"
+      const ementa = $(cells[2]).text().trim();
+      const link = $(row).find("a").first().attr("href") ?? "";
+
+      const { numero, ano } = parseNumeroAno(numeroAno);
+      if (!numero || !ano) return;
+
+      resultados.push({
+        id: generatePoaId(tipo || "PROP", numero, ano),
+        numero,
+        ano,
+        siglaTipo: tipo || "PROP",
+        ementa: ementa || "Ementa não disponível",
+        autor: extrairAutor($, row),
+        status: extrairStatus($, row),
+        dataApresentacao: extrairData($, row),
+        urlOriginal: link.startsWith("http") ? link : `${BASE_URL}${link}`,
+      });
+    });
+
+    return resultados;
+  }
+
+  // Fallback: tenta lista em formato de cards
+  $(".card-proposicao, .item-proposicao, article").each((_, el) => {
+    const tipo = $(el).find(".tipo, .badge").first().text().trim();
+    const ementa = $(el).find(".ementa, p").first().text().trim();
+    const link = $(el).find("a").first().attr("href") ?? "";
+    const dataText = $(el).find(".data, time").first().text().trim();
+
+    const numero = parseInt($(el).find(".numero").first().text(), 10);
+    const ano = new Date().getFullYear();
+
+    if (!ementa || isNaN(numero)) return;
+
+    resultados.push({
+      id: generatePoaId(tipo || "PROP", numero, ano),
+      numero,
+      ano,
+      siglaTipo: tipo || "PROP",
+      ementa,
+      autor: $(el).find(".autor").first().text().trim() || "Não informado",
+      status: $(el).find(".status, .situacao").first().text().trim() || "Em tramitação",
+      dataApresentacao: parseDataBR(dataText) || new Date().toISOString(),
+      urlOriginal: link.startsWith("http") ? link : `${BASE_URL}${link}`,
+    });
+  });
+
+  return resultados;
+}
+
+// ─── Helpers de parsing ───────────────────────────────────────────────────────
+
+function parseNumeroAno(texto: string): { numero: number; ano: number } {
+  const match = texto.match(/(\d+)[\/\-](\d{4})/);
+  if (!match) return { numero: 0, ano: 0 };
+  return { numero: parseInt(match[1], 10), ano: parseInt(match[2], 10) };
+}
+
+function extrairAutor($: cheerio.CheerioAPI, row: Element): string {
+  const texto = $(row).find(".autor, td:nth-child(4)").first().text().trim();
+  return texto || "Não informado";
+}
+
+function extrairStatus($: cheerio.CheerioAPI, row: Element): string {
+  const texto = $(row).find(".status, .situacao, td:last-child").first().text().trim();
+  return texto || "Em tramitação";
+}
+
+function extrairData($: cheerio.CheerioAPI, row: Element): string {
+  const texto = $(row).find(".data, time, td:nth-child(3)").first().text().trim();
+  return parseDataBR(texto) || new Date().toISOString();
+}
+
+/** Converte data no formato DD/MM/AAAA para ISO string */
+function parseDataBR(texto: string): string | null {
+  const match = texto.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if (!match) return null;
+  const [, dia, mes, ano] = match;
+  return new Date(`${ano}-${mes}-${dia}T00:00:00.000Z`).toISOString();
+}
+
+// ─── Normalização ─────────────────────────────────────────────────────────────
+
+/** Converte proposição do POA para o formato interno da aplicação */
+function normalizarProposicaoPOA(item: CamaraPOAProposicao): Proposicao {
+  return {
+    id: item.id,
+    numero: item.numero,
+    ano: item.ano,
+    siglaTipo: item.siglaTipo,
+    ementa: item.ementa,
+    ementaDetalhada: null,
+    dataApresentacao: item.dataApresentacao,
+    autor: item.autor,
+    casa: "poa",
+    urlOriginal: item.urlOriginal,
+    status: item.status,
+    orgaoStatus: null,
+    aiSummary: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}

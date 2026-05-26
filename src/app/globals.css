@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-bg: 15 23 42;          /* slate-950 */
+    --color-surface: 30 41 59;     /* slate-800 */
+    --color-border: 51 65 85;      /* slate-700 */
+    --color-text: 241 245 249;     /* slate-100 */
+    --color-muted: 148 163 184;    /* slate-400 */
+    --font-inter: 'Inter', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  * {
+    @apply border-slate-700;
+  }
+
+  body {
+    @apply bg-slate-950 text-slate-100 antialiased;
+    font-family: var(--font-inter);
+  }
+
+  /* Scrollbar personalizada */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-slate-900; }
+  ::-webkit-scrollbar-thumb { @apply bg-slate-700 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-slate-600; }
+
+  /* Destaque de keywords no texto */
+  mark {
+    @apply bg-yellow-400/30 text-yellow-200 rounded px-0.5 not-italic;
+  }
+
+  /* Prose para conteúdo gerado pela IA */
+  .prose-ai h2 {
+    @apply text-slate-100 font-semibold text-base mt-4 mb-1;
+  }
+  .prose-ai p {
+    @apply text-slate-300 text-sm leading-relaxed mb-2;
+  }
+  .prose-ai strong {
+    @apply text-slate-100 font-medium;
+  }
+}
+
+@layer components {
+  /* Cartão base */
+  .card {
+    @apply bg-slate-800 border border-slate-700 rounded-xl p-5 transition-colors;
+  }
+
+  .card-hover {
+    @apply card hover:border-slate-600 hover:bg-slate-800/80 cursor-pointer;
+  }
+
+  /* Badge base */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border;
+  }
+
+  /* Input padrão */
+  .input {
+    @apply w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5
+           text-slate-100 placeholder-slate-500 text-sm
+           focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500
+           transition-colors;
+  }
+
+  /* Botão primário */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600
+           hover:bg-blue-500 text-white text-sm font-medium
+           transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Botão secundário */
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700
+           hover:bg-slate-600 text-slate-100 text-sm font-medium
+           transition-colors disabled:opacity-50;
+  }
+
+  /* Botão fantasma */
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 rounded-lg
+           hover:bg-slate-700 text-slate-400 hover:text-slate-100 text-sm
+           transition-colors;
+  }
+
+  /* Spinner de carregamento */
+  .spinner {
+    @apply animate-spin rounded-full border-2 border-slate-600 border-t-blue-500;
+  }
+
+  /* Divisor */
+  .divider {
+    @apply border-t border-slate-700/50 my-4;
+  }
+
+  /* Label de formulário */
+  .label {
+    @apply block text-sm font-medium text-slate-300 mb-1.5;
+  }
+}
+
+/* Animações de entrada para itens de lista */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+/* Delay escalonado para listas */
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 40ms; }
+.stagger > *:nth-child(3) { animation-delay: 80ms; }
+.stagger > *:nth-child(4) { animation-delay: 120ms; }
+.stagger > *:nth-child(5) { animation-delay: 160ms; }
+.stagger > *:nth-child(n+6) { animation-delay: 200ms; }

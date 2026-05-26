@@ -1,0 +1,95 @@
+// Prisma Schema — Legisla Monitor
+// Banco de dados SQLite para desenvolvimento local.
+// Para produção, substitua o provider por "postgresql" e ajuste a DATABASE_URL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Palavras-chave que o usuário quer monitorar
+model Keyword {
+  id          String   @id @default(cuid())
+  text        String   @unique
+  createdAt   DateTime @default(now())
+  active      Boolean  @default(true)
+
+  proposicoes ProposicaoKeyword[]
+}
+
+// Proposições encontradas nas APIs/scrapers
+model Proposicao {
+  id               String   @id  // ID da Câmara Federal ou slug da Câmara POA
+  numero           Int
+  ano              Int
+  siglaTipo        String          // PL, PEC, PDL, etc.
+  ementa           String
+  ementaDetalhada  String?
+  dataApresentacao DateTime
+  autor            String
+  casa             String          // "federal" | "poa"
+  urlOriginal      String
+  status           String
+  orgaoStatus      String?
+  aiSummary        String?         // Resumo gerado pela IA (opcional)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  keywords      ProposicaoKeyword[]
+  tramitacoes   Tramitacao[]
+  notifications Notification[]
+  votacoes      Votacao[]
+}
+
+// Tabela intermediária: quais keywords encontraram cada proposição
+model ProposicaoKeyword {
+  proposicao   Proposicao @relation(fields: [proposicaoId], references: [id])
+  proposicaoId String
+  keyword      Keyword    @relation(fields: [keywordId], references: [id])
+  keywordId    String
+
+  @@id([proposicaoId, keywordId])
+}
+
+// Histórico de tramitação de um PL
+model Tramitacao {
+  id           String     @id @default(cuid())
+  proposicaoId String
+  proposicao   Proposicao @relation(fields: [proposicaoId], references: [id])
+  sequencia    Int
+  descricao    String
+  orgao        String
+  data         DateTime
+  createdAt    DateTime   @default(now())
+
+  @@unique([proposicaoId, sequencia])
+}
+
+// Feed de notificações para o usuário
+model Notification {
+  id           String     @id @default(cuid())
+  tipo         String     // "nova_proposicao" | "tramitacao" | "votacao" | "resumo_semanal"
+  titulo       String
+  mensagem     String
+  proposicaoId String?
+  proposicao   Proposicao? @relation(fields: [proposicaoId], references: [id])
+  read         Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+}
+
+// Votações agendadas ou realizadas
+model Votacao {
+  id           String     @id @default(cuid())
+  proposicaoId String?
+  proposicao   Proposicao? @relation(fields: [proposicaoId], references: [id])
+  descricao    String
+  orgao        String
+  dataHora     DateTime
+  resultado    String?
+  uri          String?
+  createdAt    DateTime   @default(now())
+}
