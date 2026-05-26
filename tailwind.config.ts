@@ -9,35 +9,50 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Paleta de cores do projeto
+        // ── Câmara Federal — azul ───────────────────────────────────────────
         federal: {
-          DEFAULT: "#3b82f6", // azul — Câmara Federal
-          light: "#93c5fd",
-          dark: "#1d4ed8",
+          DEFAULT: "#3b82f6",
+          light:   "#bfdbfe",
+          dark:    "#1d4ed8",
+          bg:      "#eff6ff",
+          text:    "#1e40af",
         },
+        // ── Câmara Municipal POA — verde (paleta clara) ─────────────────────
         poa: {
-          DEFAULT: "#10b981", // verde — Câmara Municipal de Porto Alegre
-          light: "#6ee7b7",
-          dark: "#047857",
+          DEFAULT: "#22c55e",
+          light:   "#bbf7d0",
+          dark:    "#15803d",
+          bg:      "#f0fdf4",
+          text:    "#166534",
         },
       },
       fontFamily: {
-        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
-        mono: ["var(--font-mono)", "monospace"],
+        // Carregada via @import no theme.css
+        sans: ["var(--font-base)", "Inter", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "JetBrains Mono", "monospace"],
+      },
+      borderRadius: {
+        sm: "0.375rem",
+        md: "0.625rem",
+        lg: "0.875rem",
+        xl: "1.25rem",
+      },
+      boxShadow: {
+        green: "0 4px 14px -2px rgb(34 197 94 / 0.25)",
+        blue:  "0 4px 14px -2px rgb(59 130 246 / 0.25)",
       },
       animation: {
-        "fade-in": "fadeIn 0.3s ease-in-out",
-        "slide-in": "slideIn 0.2s ease-out",
-        pulse: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "fade-in":  "fadeIn 0.25s ease-out forwards",
+        "slide-in": "slideIn 0.2s ease-out forwards",
       },
       keyframes: {
         fadeIn: {
-          "0%": { opacity: "0", transform: "translateY(8px)" },
+          "0%":   { opacity: "0", transform: "translateY(6px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
         slideIn: {
-          "0%": { transform: "translateX(-8px)", opacity: "0" },
-          "100%": { transform: "translateX(0)", opacity: "1" },
+          "0%":   { opacity: "0", transform: "translateX(-8px)" },
+          "100%": { opacity: "1", transform: "translateX(0)" },
         },
       },
     },

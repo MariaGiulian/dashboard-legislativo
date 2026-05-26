@@ -2,123 +2,116 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    --color-bg: 15 23 42;          /* slate-950 */
-    --color-surface: 30 41 59;     /* slate-800 */
-    --color-border: 51 65 85;      /* slate-700 */
-    --color-text: 241 245 249;     /* slate-100 */
-    --color-muted: 148 163 184;    /* slate-400 */
-    --font-inter: 'Inter', system-ui, sans-serif;
-    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-  }
+/* Design system completo: tokens, tipografia, componentes, layout */
+@import "../styles/theme.css";
 
+/*
+  globals.css — Classes Tailwind que complementam o theme.css.
+  Toda a paleta, fontes e componentes base vivem em src/styles/theme.css.
+*/
+
+@layer base {
   * {
-    @apply border-slate-700;
+    @apply border-gray-200;
   }
 
   body {
-    @apply bg-slate-950 text-slate-100 antialiased;
-    font-family: var(--font-inter);
+    @apply bg-gray-50 text-gray-900 antialiased;
+    font-family: var(--font-base);
   }
 
-  /* Scrollbar personalizada */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { @apply bg-slate-900; }
-  ::-webkit-scrollbar-thumb { @apply bg-slate-700 rounded-full; }
-  ::-webkit-scrollbar-thumb:hover { @apply bg-slate-600; }
-
-  /* Destaque de keywords no texto */
+  /* Destaque de keywords nas ementas */
   mark {
-    @apply bg-yellow-400/30 text-yellow-200 rounded px-0.5 not-italic;
+    @apply bg-green-100 text-green-800 rounded px-0.5 not-italic;
   }
 
-  /* Prose para conteúdo gerado pela IA */
-  .prose-ai h2 {
-    @apply text-slate-100 font-semibold text-base mt-4 mb-1;
-  }
-  .prose-ai p {
-    @apply text-slate-300 text-sm leading-relaxed mb-2;
-  }
-  .prose-ai strong {
-    @apply text-slate-100 font-medium;
-  }
+  /* Conteúdo gerado pela IA */
+  .prose-ai h2     { @apply text-gray-900 font-semibold text-sm mt-4 mb-1; }
+  .prose-ai p      { @apply text-gray-600 text-sm leading-relaxed mb-2; }
+  .prose-ai strong { @apply text-gray-900 font-medium; }
 }
 
 @layer components {
-  /* Cartão base */
+  /* ── Cards ─────────────────────────────────────────────────────────────── */
   .card {
-    @apply bg-slate-800 border border-slate-700 rounded-xl p-5 transition-colors;
+    @apply bg-white border border-gray-200 rounded-xl p-5
+           transition-[border-color,box-shadow] duration-150;
   }
 
   .card-hover {
-    @apply card hover:border-slate-600 hover:bg-slate-800/80 cursor-pointer;
+    @apply card cursor-pointer hover:border-green-300 hover:shadow-md;
   }
 
-  /* Badge base */
+  /* ── Badges ─────────────────────────────────────────────────────────────── */
   .badge {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border;
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5
+           rounded-full text-xs font-medium border whitespace-nowrap;
   }
 
-  /* Input padrão */
+  /* ── Input ──────────────────────────────────────────────────────────────── */
   .input {
-    @apply w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5
-           text-slate-100 placeholder-slate-500 text-sm
-           focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500
-           transition-colors;
+    @apply w-full bg-white border border-gray-200 rounded-lg px-4 py-2.5
+           text-sm text-gray-900 placeholder-gray-400
+           outline-none transition-[border-color,box-shadow] duration-150
+           hover:border-gray-300
+           focus:border-green-400 focus:ring-2 focus:ring-green-400/20;
   }
 
-  /* Botão primário */
+  /* ── Botões ─────────────────────────────────────────────────────────────── */
   .btn-primary {
-    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600
-           hover:bg-blue-500 text-white text-sm font-medium
-           transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg
+           bg-green-500 hover:bg-green-600 text-white text-sm font-medium
+           border border-green-600 shadow-sm transition-all duration-150
+           disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
-  /* Botão secundário */
   .btn-secondary {
-    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-700
-           hover:bg-slate-600 text-slate-100 text-sm font-medium
-           transition-colors disabled:opacity-50;
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg
+           bg-white hover:bg-gray-50 text-gray-600 hover:text-gray-900
+           text-sm font-medium border border-gray-200 hover:border-gray-300
+           shadow-sm transition-all duration-150
+           disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
-  /* Botão fantasma */
+  .btn-blue {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg
+           bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium
+           border border-blue-600 shadow-sm transition-all duration-150
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
   .btn-ghost {
-    @apply inline-flex items-center gap-2 px-3 py-1.5 rounded-lg
-           hover:bg-slate-700 text-slate-400 hover:text-slate-100 text-sm
-           transition-colors;
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm
+           text-gray-400 hover:text-gray-700 hover:bg-gray-100
+           transition-all duration-150 disabled:opacity-50;
   }
 
-  /* Spinner de carregamento */
-  .spinner {
-    @apply animate-spin rounded-full border-2 border-slate-600 border-t-blue-500;
-  }
-
-  /* Divisor */
-  .divider {
-    @apply border-t border-slate-700/50 my-4;
-  }
-
-  /* Label de formulário */
+  /* ── Formulários ────────────────────────────────────────────────────────── */
   .label {
-    @apply block text-sm font-medium text-slate-300 mb-1.5;
+    @apply block text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wide;
+  }
+
+  .divider {
+    @apply border-t border-gray-200 my-4;
+  }
+
+  .spinner {
+    @apply w-5 h-5 rounded-full border-2 border-green-200 border-t-green-500 animate-spin;
   }
 }
 
-/* Animações de entrada para itens de lista */
+/* Animação de entrada */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-.animate-fade-in {
-  animation: fadeIn 0.25s ease-out forwards;
-}
+.animate-fade-in { animation: fadeIn 0.25s ease-out forwards; }
 
-/* Delay escalonado para listas */
-.stagger > *:nth-child(1) { animation-delay: 0ms; }
-.stagger > *:nth-child(2) { animation-delay: 40ms; }
-.stagger > *:nth-child(3) { animation-delay: 80ms; }
-.stagger > *:nth-child(4) { animation-delay: 120ms; }
-.stagger > *:nth-child(5) { animation-delay: 160ms; }
-.stagger > *:nth-child(n+6) { animation-delay: 200ms; }
+/* Entradas escalonadas para listas */
+.stagger > *:nth-child(1)   { animation-delay: 0ms;   }
+.stagger > *:nth-child(2)   { animation-delay: 50ms;  }
+.stagger > *:nth-child(3)   { animation-delay: 100ms; }
+.stagger > *:nth-child(4)   { animation-delay: 150ms; }
+.stagger > *:nth-child(5)   { animation-delay: 200ms; }
+.stagger > *:nth-child(n+6) { animation-delay: 250ms; }
