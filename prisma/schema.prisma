@@ -1,14 +1,20 @@
 // Prisma Schema — Legisla Monitor
-// Banco de dados SQLite para desenvolvimento local.
-// Para produção, substitua o provider por "postgresql" e ajuste a DATABASE_URL.
+// Banco de dados: PostgreSQL (Railway em produção, local em dev)
+//
+// Para desenvolvimento local, use uma das opções:
+//   1. Railway: copie a DATABASE_URL do painel do projeto Railway
+//   2. Docker: docker run -e POSTGRES_PASSWORD=dev -p 5432:5432 postgres:16
+//              DATABASE_URL="postgresql://postgres:dev@localhost:5432/legisla"
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // directUrl é usado para migrações (bypassa o pooler se usar PgBouncer/Prisma Accelerate)
+  directUrl = env("DIRECT_URL")
 }
 
 // Palavras-chave que o usuário quer monitorar
