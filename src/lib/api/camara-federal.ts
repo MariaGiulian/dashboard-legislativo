@@ -1,255 +1,394 @@
 /**
  * Cliente para a API de Dados Abertos da Câmara dos Deputados
  *
- * Documentação oficial: https://dadosabertos.camara.leg.br/swagger/api.html
+ * Documentação: https://dadosabertos.camara.leg.br/swagger/api.html
  * Base URL: https://dadosabertos.camara.leg.br/api/v2
+ * Sem autenticação — API pública.
  *
- * A API é pública e não requer autenticação.
- * Recomenda-se respeitar um intervalo mínimo entre requisições.
+ * CORREÇÕES aplicadas em relação à versão anterior:
+ *  - Removido `ordenarPor=dataApresentacao` (parâmetro inválido → HTTP 400)
+ *  - Removido `itens` e `ordem` de tramitações (não suportados → HTTP 400)
+ *  - `autores` não existe na listagem; buscados via /proposicoes/{id}/autores
+ *  - `descricaoSituacao` ≠ descrição da tramitação; campo correto: `descricaoTramitacao`
+ *  - Incluídos campos ricos: despacho, regime, apreciacao, urlDocumento, keywordsApi
  */
 
-import axios from "axios";
+import axios, { type AxiosInstance } from "axios";
 import {
   type CamaraFederalProposicaoItem,
   type CamaraFederalProposicaoDetalhes,
-  type CamaraFederalTramitacao,
-  type CamaraFederalVotacao,
+  type CamaraFederalTramitacaoItem,
+  type CamaraFederalVotacaoItem,
+  type CamaraFederalAutor,
+  type CamaraFederalTema,
+  type CamaraFederalEnvelope,
   type Proposicao,
   type Tramitacao,
   type Votacao,
 } from "@/types";
-import { sleep, getDefaultHeaders, generatePoaId } from "@/lib/utils";
+import { sleep, getDefaultHeaders } from "@/lib/utils";
 
 const BASE_URL = "https://dadosabertos.camara.leg.br/api/v2";
-const REQUEST_DELAY_MS = 500; // intervalo entre requisições para não sobrecarregar a API
 
-const client = axios.create({
+/** Delay entre requisições — respeito à API pública */
+const DELAY_MS = 400;
+
+const client: AxiosInstance = axios.create({
   baseURL: BASE_URL,
-  timeout: 15_000,
+  timeout: 20_000,
   headers: getDefaultHeaders(),
 });
 
-// ─── Proposições ──────────────────────────────────────────────────────────────
+// =============================================================================
+// PROPOSIÇÕES
+// =============================================================================
 
 /**
- * Busca proposições que contenham uma palavra-chave na ementa.
+ * Busca proposições por palavra-chave na ementa.
  *
- * @param keyword - Termo de busca (ex: "inteligência artificial")
- * @param dataInicio - Buscar a partir desta data (AAAA-MM-DD)
- * @param pagina - Página de resultados (padrão: 1)
- * @returns Lista de proposições normalizadas
+ * Parâmetros válidos confirmados na API:
+ *   - keywords, dataInicio, dataFim, siglaTipo, numero, ano, autor, pagina
+ *
+ * REMOVIDO: ordenarPor=dataApresentacao (inválido — causa HTTP 400)
  */
 export async function buscarProposicoesPorKeyword(
   keyword: string,
   dataInicio?: string,
-  pagina = 1
+  pagina = 1,
+  itensPorPagina = 20
 ): Promise<Proposicao[]> {
   const params: Record<string, string | number> = {
     keywords: keyword,
-    ordem: "DESC",
-    ordenarPor: "dataApresentacao",
-    itens: 20,
     pagina,
+    itens: itensPorPagina,
   };
 
-  // Filtra por data para evitar resultados muito antigos
   if (dataInicio) {
+    // Filtro por data de apresentação (formato AAAA-MM-DD)
     params.dataInicio = dataInicio;
   }
 
   try {
-    const response = await client.get<{ dados: CamaraFederalProposicaoItem[] }>(
+    const response = await client.get<CamaraFederalEnvelope<CamaraFederalProposicaoItem[]>>(
       "/proposicoes",
       { params }
     );
 
-    return response.data.dados.map((item) =>
-      normalizarProposicaoFederal(item, keyword)
-    );
+    const itens = response.data.dados ?? [];
+    return itens.map((item) => normalizarItemListagem(item));
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.status === 404) {
-      return [];
-    }
+    if (axios.isAxiosError(error) && error.response?.status === 404) return [];
     throw new Error(
-      `Erro ao buscar proposições federais: ${
-        error instanceof Error ? error.message : String(error)
-      }`
+      `[CamaraFederal] buscarProposicoesPorKeyword("${keyword}"): ` +
+      (error instanceof Error ? error.message : String(error))
     );
   }
 }
 
 /**
- * Busca proposições de múltiplas keywords em sequência.
- * Insere delay entre cada requisição para respeitar a API.
+ * Busca proposições para múltiplas keywords, deduplicando por ID.
+ * Insere delay entre chamadas para não sobrecarregar a API.
  */
 export async function buscarProposicoesPorKeywords(
   keywords: string[],
   dataInicio?: string
 ): Promise<Proposicao[]> {
-  const resultados: Proposicao[] = [];
+  const resultado: Proposicao[] = [];
   const idsSeen = new Set<string>();
 
-  for (const keyword of keywords) {
-    const proposicoes = await buscarProposicoesPorKeyword(keyword, dataInicio);
-
-    for (const p of proposicoes) {
+  for (const kw of keywords) {
+    const items = await buscarProposicoesPorKeyword(kw, dataInicio);
+    for (const p of items) {
       if (!idsSeen.has(p.id)) {
         idsSeen.add(p.id);
-        resultados.push(p);
+        resultado.push(p);
       }
     }
-
-    await sleep(REQUEST_DELAY_MS);
+    await sleep(DELAY_MS);
   }
 
-  return resultados;
+  return resultado;
 }
 
 /**
- * Retorna os detalhes completos de uma proposição pelo ID numérico.
+ * Busca proposições pelo código de tema oficial da Câmara Federal.
+ * Use `listarTemas()` para obter os códigos disponíveis.
+ *
+ * Ex: codTema=62 → "Ciência, Tecnologia e Inovação"
+ */
+export async function buscarProposicoesPorTema(
+  codTema: string | number,
+  dataInicio?: string,
+  pagina = 1
+): Promise<Proposicao[]> {
+  const params: Record<string, string | number> = {
+    codTema: String(codTema),
+    pagina,
+    itens: 20,
+  };
+
+  if (dataInicio) params.dataInicio = dataInicio;
+
+  try {
+    const response = await client.get<CamaraFederalEnvelope<CamaraFederalProposicaoItem[]>>(
+      "/proposicoes",
+      { params }
+    );
+    return (response.data.dados ?? []).map((item) => normalizarItemListagem(item));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Retorna os detalhes completos de uma proposição.
+ * Inclui todos os campos ricos que a listagem não retorna:
+ * ementaDetalhada, keywords, regime, apreciacao, despacho, urlInteiroTeor, etc.
  */
 export async function buscarDetalheProposicao(
   id: string | number
 ): Promise<Proposicao | null> {
   try {
-    const response = await client.get<{ dados: CamaraFederalProposicaoDetalhes }>(
-      `/proposicoes/${id}`
-    );
-    return normalizarProposicaoFederalDetalhes(response.data.dados);
+    const [detalheRes, autoresRes] = await Promise.allSettled([
+      client.get<CamaraFederalEnvelope<CamaraFederalProposicaoDetalhes>>(`/proposicoes/${id}`),
+      client.get<CamaraFederalEnvelope<CamaraFederalAutor[]>>(`/proposicoes/${id}/autores`),
+    ]);
+
+    if (detalheRes.status === "rejected") return null;
+
+    const detalhe = detalheRes.value.data.dados;
+    const autores = autoresRes.status === "fulfilled"
+      ? autoresRes.value.data.dados ?? []
+      : [];
+
+    return normalizarDetalhes(detalhe, autores);
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.status === 404) {
-      return null;
-    }
+    if (axios.isAxiosError(error) && error.response?.status === 404) return null;
     throw error;
   }
 }
 
 /**
- * Retorna o histórico de tramitação de uma proposição.
+ * Busca os autores de uma proposição.
+ * A listagem /proposicoes NÃO inclui autores — é preciso chamar este endpoint.
+ */
+export async function buscarAutoresProposicao(
+  proposicaoId: string | number
+): Promise<CamaraFederalAutor[]> {
+  try {
+    const response = await client.get<CamaraFederalEnvelope<CamaraFederalAutor[]>>(
+      `/proposicoes/${proposicaoId}/autores`
+    );
+    return response.data.dados ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// =============================================================================
+// TRAMITAÇÕES
+// =============================================================================
+
+/**
+ * Retorna o histórico completo de tramitação de uma proposição.
+ *
+ * CORREÇÃO: removidos parâmetros `itens` e `ordem` (não suportados, causam 400).
+ * A API retorna todas as tramitações ordenadas por sequência por padrão.
+ *
+ * Campos capturados:
+ *   - descricaoTramitacao: a ação que ocorreu (ex: "Apresentação de Proposição")
+ *   - descricaoSituacao: status resultante (ex: "Aguardando Designação de Relator")
+ *   - despacho: texto completo do despacho — pode conter informações importantes
+ *   - regime: regime de tramitação naquele momento
+ *   - url: link para o documento gerado naquela etapa
  */
 export async function buscarTramitacoes(
   proposicaoId: string | number
 ): Promise<Tramitacao[]> {
   try {
-    const response = await client.get<{ dados: CamaraFederalTramitacao[] }>(
-      `/proposicoes/${proposicaoId}/tramitacoes`,
-      { params: { ordem: "DESC", itens: 50 } }
+    const response = await client.get<CamaraFederalEnvelope<CamaraFederalTramitacaoItem[]>>(
+      `/proposicoes/${proposicaoId}/tramitacoes`
+      // IMPORTANTE: não passar `itens` nem `ordem` — esses parâmetros causam HTTP 400
     );
 
-    return response.data.dados.map((t, idx) => ({
-      id: `federal-${proposicaoId}-${t.sequencia ?? idx}`,
-      proposicaoId: String(proposicaoId),
-      sequencia: t.sequencia ?? idx,
-      descricao: t.descricaoSituacao + (t.despacho ? ` — ${t.despacho}` : ""),
-      orgao: t.siglaOrgao,
-      data: t.dataHora,
-    }));
+    const dados = response.data.dados ?? [];
+
+    // Ordena decrescente por sequência (mais recente primeiro) sem depender de parâmetro da API
+    return dados
+      .sort((a, b) => b.sequencia - a.sequencia)
+      .map((t) => normalizarTramitacao(t, String(proposicaoId)));
   } catch {
     return [];
   }
 }
 
-// ─── Votações ────────────────────────────────────────────────────────────────
+// =============================================================================
+// VOTAÇÕES
+// =============================================================================
 
 /**
- * Busca votações recentes do Plenário e comissões.
- *
- * @param dataInicio - Data inicial (AAAA-MM-DD)
- * @param dataFim    - Data final (AAAA-MM-DD)
+ * Busca votações num intervalo de datas.
+ * Parâmetros validados: dataInicio, dataFim, itens, pagina, siglaOrgao
  */
 export async function buscarVotacoes(
   dataInicio: string,
-  dataFim: string
+  dataFim: string,
+  siglaOrgao?: string
 ): Promise<Votacao[]> {
+  const params: Record<string, string | number> = {
+    dataInicio,
+    dataFim,
+    itens: 100,
+    pagina: 1,
+  };
+
+  if (siglaOrgao) params.siglaOrgao = siglaOrgao;
+
   try {
-    const response = await client.get<{ dados: CamaraFederalVotacao[] }>(
+    const response = await client.get<CamaraFederalEnvelope<CamaraFederalVotacaoItem[]>>(
       "/votacoes",
-      {
-        params: {
-          dataInicio,
-          dataFim,
-          ordem: "DESC",
-          ordenarPor: "dataHoraRegistro",
-          itens: 50,
-        },
-      }
+      { params }
     );
 
-    return response.data.dados.map((v) => ({
-      id: v.id,
-      proposicaoId: null,
-      descricao: v.descricao ?? v.proposicaoObjeto ?? "Votação sem descrição",
-      orgao: v.siglaOrgao ?? "PLEN",
-      dataHora: v.dataHoraRegistro ?? new Date().toISOString(),
-      resultado: v.aprovacao != null
-        ? v.aprovacao === 1
-          ? "Aprovada"
-          : "Rejeitada"
-        : null,
-      uri: v.uri ?? null,
-    }));
+    return (response.data.dados ?? []).map(normalizarVotacao);
   } catch {
     return [];
   }
 }
 
-// ─── Normalização ─────────────────────────────────────────────────────────────
+// =============================================================================
+// REFERÊNCIAS
+// =============================================================================
 
-/** Converte item da listagem da API para o formato interno */
-function normalizarProposicaoFederal(
-  item: CamaraFederalProposicaoItem,
-  keyword: string
-): Proposicao {
-  const autor =
-    item.autores?.[0]?.nome ??
-    "Autor não informado";
+/**
+ * Retorna todos os temas oficiais disponíveis para filtrar proposições.
+ * Esses códigos podem ser usados em buscarProposicoesPorTema().
+ *
+ * Exemplos: 62 = "Ciência, Tecnologia e Inovação", 48 = "Meio Ambiente"
+ */
+export async function listarTemas(): Promise<CamaraFederalTema[]> {
+  try {
+    const response = await client.get<CamaraFederalEnvelope<CamaraFederalTema[]>>(
+      "/referencias/proposicoes/codTema"
+    );
+    return response.data.dados ?? [];
+  } catch {
+    return [];
+  }
+}
 
+// =============================================================================
+// NORMALIZAÇÃO — conversão dos dados brutos da API para o formato interno
+// =============================================================================
+
+/**
+ * Normaliza um item da listagem /proposicoes.
+ *
+ * ATENÇÃO: a listagem retorna campos mínimos. Autores e status NÃO estão incluídos.
+ * Para dados completos, use buscarDetalheProposicao().
+ */
+function normalizarItemListagem(item: CamaraFederalProposicaoItem): Proposicao {
   return {
     id: String(item.id),
     numero: item.numero,
     ano: item.ano,
     siglaTipo: item.siglaTipo,
+    descricaoTipo: null,    // não disponível na listagem
     ementa: item.ementa,
     ementaDetalhada: null,
+    keywordsApi: null,
     dataApresentacao: item.dataApresentacao,
-    autor,
+    autor: "Não informado", // autores não estão na listagem — buscar separadamente
+    autorUri: null,
     casa: "federal",
     urlOriginal: `https://www.camara.leg.br/proposicoesWeb/fichadetramitacao?idProposicao=${item.id}`,
-    status: item.statusProposicao?.descricaoSituacao ?? "Em tramitação",
-    orgaoStatus: item.statusProposicao?.siglaOrgao ?? null,
+    status: "Consultando…", // status real requer chamada ao /proposicoes/{id}
+    orgaoStatus: null,
+    regime: null,
+    apreciacao: null,
+    codSituacao: null,
     aiSummary: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    keywords: [{ keyword: { id: keyword, text: keyword } }],
   };
 }
 
-/** Converte resposta de detalhe da API para o formato interno */
-function normalizarProposicaoFederalDetalhes(
-  item: CamaraFederalProposicaoDetalhes
+/**
+ * Normaliza a resposta detalhada de /proposicoes/{id}.
+ * Inclui todos os campos ricos disponíveis na API.
+ */
+function normalizarDetalhes(
+  item: CamaraFederalProposicaoDetalhes,
+  autores: CamaraFederalAutor[]
 ): Proposicao {
-  const autor = item.autores?.[0]?.nome ?? "Autor não informado";
+  const autorPrincipal = autores.find((a) => a.proponente === 1) ?? autores[0];
+  const status = item.statusProposicao;
 
   return {
     id: String(item.id),
     numero: item.numero,
     ano: item.ano,
     siglaTipo: item.siglaTipo,
+    descricaoTipo: item.descricaoTipo || null,
     ementa: item.ementa,
-    ementaDetalhada: item.ementaDetalhada ?? null,
+    ementaDetalhada: item.ementaDetalhada || null,
+    keywordsApi: item.keywords || null,
     dataApresentacao: item.dataApresentacao,
-    autor,
+    autor: autorPrincipal?.nome ?? "Não informado",
+    autorUri: autorPrincipal?.uri ?? null,
     casa: "federal",
     urlOriginal:
       item.urlInteiroTeor ??
       `https://www.camara.leg.br/proposicoesWeb/fichadetramitacao?idProposicao=${item.id}`,
-    status: item.statusProposicao?.descricaoSituacao ?? "Em tramitação",
-    orgaoStatus: item.statusProposicao?.siglaOrgao ?? null,
+    status: status?.descricaoSituacao ?? "Status não disponível",
+    orgaoStatus: status?.siglaOrgao ?? null,
+    regime: status?.regime ?? null,
+    apreciacao: status?.apreciacao ?? null,
+    codSituacao: status?.codSituacao ?? null,
     aiSummary: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
 }
 
-// Exporta o cliente para uso em testes
+/**
+ * Normaliza um item de tramitação.
+ *
+ * CORREÇÃO: o campo da ação é `descricaoTramitacao`, não `descricaoSituacao`.
+ * `descricaoSituacao` representa o status resultante daquela etapa.
+ */
+function normalizarTramitacao(
+  t: CamaraFederalTramitacaoItem,
+  proposicaoId: string
+): Tramitacao {
+  return {
+    id: `federal-${proposicaoId}-${t.sequencia}`,
+    proposicaoId,
+    sequencia: t.sequencia,
+    descricaoTramitacao: t.descricaoTramitacao,
+    descricaoSituacao: t.descricaoSituacao,
+    despacho: t.despacho || null,
+    orgao: t.siglaOrgao,
+    regime: t.regime || null,
+    urlDocumento: t.url || null,
+    data: t.dataHora,
+  };
+}
+
+/** Normaliza uma votação */
+function normalizarVotacao(v: CamaraFederalVotacaoItem): Votacao {
+  return {
+    id: v.id,
+    proposicaoId: null,
+    descricao: v.descricao || v.proposicaoObjeto || "Votação sem descrição",
+    orgao: v.siglaOrgao,
+    dataHora: v.dataHoraRegistro || v.data,
+    resultado:
+      v.aprovacao === 1 ? "Aprovada" :
+      v.aprovacao === 0 ? "Rejeitada" :
+      null,
+    uri: v.uri ?? null,
+  };
+}
+
 export { client as camaraFederalClient };

@@ -23,18 +23,24 @@ model Keyword {
 
 // Proposições encontradas nas APIs/scrapers
 model Proposicao {
-  id               String   @id  // ID da Câmara Federal ou slug da Câmara POA
+  id               String   @id  // ID numérico da Câmara Federal ou slug da Câmara POA
   numero           Int
   ano              Int
   siglaTipo        String          // PL, PEC, PDL, etc.
+  descricaoTipo    String?         // Descrição completa: "Projeto de Lei", etc.
   ementa           String
   ementaDetalhada  String?
+  keywordsApi      String?         // Keywords oficiais registradas na Câmara Federal
   dataApresentacao DateTime
   autor            String
+  autorUri         String?         // URI do deputado na API
   casa             String          // "federal" | "poa"
-  urlOriginal      String
-  status           String
-  orgaoStatus      String?
+  urlOriginal      String          // URL do inteiro teor ou ficha de tramitação
+  status           String          // Situação atual
+  orgaoStatus      String?         // Sigla do órgão atual (ex: "CCTI", "PLEN")
+  regime           String?         // Regime de tramitação (ex: "Ordinário", "Urgência")
+  apreciacao       String?         // Apreciação (ex: "Aprovação do Plenário")
+  codSituacao      Int?            // Código numérico da situação
   aiSummary        String?         // Resumo gerado pela IA (opcional)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -55,41 +61,45 @@ model ProposicaoKeyword {
   @@id([proposicaoId, keywordId])
 }
 
-// Histórico de tramitação de um PL
+// Histórico de tramitação de um PL — reflete os dados reais da API da Câmara
 model Tramitacao {
-  id           String     @id @default(cuid())
-  proposicaoId String
-  proposicao   Proposicao @relation(fields: [proposicaoId], references: [id])
-  sequencia    Int
-  descricao    String
-  orgao        String
-  data         DateTime
-  createdAt    DateTime   @default(now())
+  id                   String     @id @default(cuid())
+  proposicaoId         String
+  proposicao           Proposicao @relation(fields: [proposicaoId], references: [id])
+  sequencia            Int
+  descricaoTramitacao  String     // Ação: "Apresentação de Proposição", "Distribuição", etc.
+  descricaoSituacao    String     // Status resultante: "Aguardando Relator", etc.
+  despacho             String?    // Texto completo do despacho (pode ser longo)
+  orgao                String     // Sigla: "MESA", "PLEN", "CCTI"
+  regime               String?    // Regime de tramitação naquele momento
+  urlDocumento         String?    // Link para o documento da tramitação
+  data                 DateTime
+  createdAt            DateTime   @default(now())
 
   @@unique([proposicaoId, sequencia])
 }
 
 // Feed de notificações para o usuário
 model Notification {
-  id           String     @id @default(cuid())
-  tipo         String     // "nova_proposicao" | "tramitacao" | "votacao" | "resumo_semanal"
+  id           String      @id @default(cuid())
+  tipo         String      // "nova_proposicao" | "tramitacao" | "votacao" | "resumo_semanal"
   titulo       String
   mensagem     String
   proposicaoId String?
   proposicao   Proposicao? @relation(fields: [proposicaoId], references: [id])
-  read         Boolean    @default(false)
-  createdAt    DateTime   @default(now())
+  read         Boolean     @default(false)
+  createdAt    DateTime    @default(now())
 }
 
 // Votações agendadas ou realizadas
 model Votacao {
-  id           String     @id @default(cuid())
-  proposicaoId String?
-  proposicao   Proposicao? @relation(fields: [proposicaoId], references: [id])
-  descricao    String
-  orgao        String
-  dataHora     DateTime
-  resultado    String?
-  uri          String?
-  createdAt    DateTime   @default(now())
+  id              String      @id
+  proposicaoId    String?
+  proposicao      Proposicao? @relation(fields: [proposicaoId], references: [id])
+  descricao       String
+  orgao           String
+  dataHora        DateTime
+  resultado       String?     // "Aprovada" | "Rejeitada"
+  uri             String?
+  createdAt       DateTime    @default(now())
 }

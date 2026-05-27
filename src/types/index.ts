@@ -20,14 +20,20 @@ export interface Proposicao {
   numero: number;
   ano: number;
   siglaTipo: string;
+  descricaoTipo?: string | null;
   ementa: string;
   ementaDetalhada?: string | null;
-  dataApresentacao: string; // ISO string
+  keywordsApi?: string | null;        // Keywords oficiais da Câmara Federal
+  dataApresentacao: string;           // ISO string
   autor: string;
+  autorUri?: string | null;
   casa: Casa;
   urlOriginal: string;
   status: string;
   orgaoStatus?: string | null;
+  regime?: string | null;
+  apreciacao?: string | null;
+  codSituacao?: number | null;
   aiSummary?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -35,73 +41,118 @@ export interface Proposicao {
   tramitacoes?: Tramitacao[];
 }
 
-/** Etapa de tramitação de um PL */
+/** Etapa de tramitação de um PL — campos completos da API da Câmara Federal */
 export interface Tramitacao {
   id: string;
   proposicaoId: string;
   sequencia: number;
-  descricao: string;
+  descricaoTramitacao: string;  // A ação que ocorreu
+  descricaoSituacao: string;    // O status resultante
+  despacho?: string | null;     // Texto completo do despacho
   orgao: string;
-  data: string; // ISO string
+  regime?: string | null;
+  urlDocumento?: string | null;
+  data: string;                 // ISO string
 }
 
-// ─── Câmara Federal (API) ──────────────────────────────────────────────────────
+// ─── Câmara Federal — Tipos da API ───────────────────────────────────────────
 
-/** Resposta bruta da API da Câmara Federal — lista de proposições */
+/** Item retornado pela listagem /proposicoes (campos reduzidos) */
 export interface CamaraFederalProposicaoItem {
   id: number;
+  uri: string;
   siglaTipo: string;
   codTipo: number;
   numero: number;
   ano: number;
   ementa: string;
   dataApresentacao: string;
-  statusProposicao?: {
-    sequencia?: number;
-    siglaOrgao?: string;
-    descricaoSituacao?: string;
-    dataHora?: string;
-  };
-  autores?: Array<{ nome: string }>;
-  uri?: string;
+  // Nota: statusProposicao e autores NÃO são retornados na listagem.
+  // Precisam ser buscados via /proposicoes/{id} e /proposicoes/{id}/autores
 }
 
-/** Resposta detalhada de um PL específico */
+/** Dados completos de /proposicoes/{id} */
 export interface CamaraFederalProposicaoDetalhes {
   id: number;
+  uri: string;
   siglaTipo: string;
+  codTipo: number;
   numero: number;
   ano: number;
   ementa: string;
-  ementaDetalhada?: string;
+  ementaDetalhada: string;
+  descricaoTipo: string;
+  keywords: string;             // Keywords registradas na Câmara, separadas por vírgula
   dataApresentacao: string;
   urlInteiroTeor?: string;
-  statusProposicao?: {
-    siglaOrgao?: string;
-    descricaoSituacao?: string;
-    sequencia?: number;
-  };
-  autores?: Array<{ nome: string; uri?: string }>;
+  uriAutores: string;           // URL para buscar os autores
+  statusProposicao: {
+    dataHora: string;
+    sequencia: number;
+    siglaOrgao: string;
+    uriOrgao?: string;
+    uriUltimoRelator?: string;
+    regime: string;
+    descricaoTramitacao: string;
+    codTipoTramitacao: string;
+    descricaoSituacao: string;
+    codSituacao: number;
+    despacho?: string;
+    url?: string | null;
+    ambito: string;
+    apreciacao: string;
+  } | null;
 }
 
-/** Item de tramitação da API da Câmara Federal */
-export interface CamaraFederalTramitacao {
-  sequencia: number;
-  descricaoSituacao: string;
-  siglaOrgao: string;
+/** Autor retornado por /proposicoes/{id}/autores */
+export interface CamaraFederalAutor {
+  uri: string;
+  nome: string;
+  codTipo: number;
+  tipo: string;               // "Deputado(a)", "Comissão", etc.
+  ordemAssinatura: number;
+  proponente: number;
+}
+
+/** Item de tramitação retornado por /proposicoes/{id}/tramitacoes */
+export interface CamaraFederalTramitacaoItem {
   dataHora: string;
-  despacho?: string;
+  sequencia: number;
+  siglaOrgao: string;
+  uriOrgao: string;
+  uriUltimoRelator?: string | null;
+  regime: string;
+  descricaoTramitacao: string;  // Nome da ação: "Apresentação de Proposição"
+  codTipoTramitacao: string;
+  descricaoSituacao: string;    // Status resultante: "Aguardando Designação de Relator"
+  codSituacao: number;
+  despacho?: string;            // Texto completo — pode conter informações ricas
+  url?: string | null;          // Link para o documento
+  ambito: string;
+  apreciacao: string;
 }
 
-/** Votação da API da Câmara Federal */
-export interface CamaraFederalVotacao {
+/** Votação retornada por /votacoes */
+export interface CamaraFederalVotacaoItem {
   id: string;
-  proposicaoObjeto?: string;
-  uri?: string;
-  descricao?: string;
-  dataHoraRegistro?: string;
-  siglaOrgao?: string;
-  aprovacao?: number;
+  uri: string;
+  data: string;
+  dataHoraRegistro: string;
+  siglaOrgao: string;
+  uriOrgao: string;
+  uriEvento?: string | null;
+  proposicaoObjeto?: string | null;
+  uriProposicaoObjeto?: string | null;
+  descricao: string;
+  aprovacao: number;            // 1 = aprovada, 0 = rejeitada, -1 = sem resultado
+}
+
+/** Tema oficial da Câmara Federal (de /referencias/proposicoes/codTema) */
+export interface CamaraFederalTema {
+  cod: string;
+  sigla: string;
+  nome: string;
+  descricao: string;
 }
 
 // ─── Câmara Municipal POA (Scraping) ──────────────────────────────────────────
@@ -163,6 +214,12 @@ export interface Votacao {
 }
 
 // ─── Respostas de API ──────────────────────────────────────────────────────────
+
+/** Envelope padrão da API da Câmara Federal */
+export interface CamaraFederalEnvelope<T> {
+  dados: T;
+  links: Array<{ rel: string; href: string }>;
+}
 
 /** Formato padrão de resposta de sucesso */
 export interface ApiSuccess<T> {
