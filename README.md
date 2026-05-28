@@ -152,7 +152,6 @@ No painel da Vercel, adicione:
 | Variável | Valor |
 |----------|-------|
 | `DATABASE_URL` | URL do seu banco (ex: Neon, PlanetScale, Supabase) |
-| `ANTHROPIC_API_KEY` | Chave da API Anthropic (opcional) |
 | `CRON_SECRET` | String aleatória para proteger o endpoint de cron |
 
 > Para produção, substitua o SQLite por PostgreSQL. Altere o `provider` no `prisma/schema.prisma`.
