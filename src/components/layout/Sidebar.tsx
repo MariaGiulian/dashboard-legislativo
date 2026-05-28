@@ -10,6 +10,7 @@ import {
   Github,
   ExternalLink,
   Scale,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,16 +22,22 @@ const navItems = [
     description: "Visão geral e notificações",
   },
   {
+    href: "/deputados",
+    icon: Users,
+    label: "Deputados",
+    description: "Lista por estado e partido",
+  },
+  {
     href: "/proposicoes",
     icon: BookOpen,
     label: "Proposições",
-    description: "PLs encontrados",
+    description: "PLs monitorados e consulta",
   },
   {
     href: "/votacoes",
     icon: Vote,
     label: "Votações",
-    description: "Próximas votações",
+    description: "Análise e próximas",
   },
   {
     href: "/temas",

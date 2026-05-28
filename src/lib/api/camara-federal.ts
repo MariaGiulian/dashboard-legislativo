@@ -25,6 +25,10 @@ import {
   type Proposicao,
   type Tramitacao,
   type Votacao,
+  type Deputado,
+  type Partido,
+  type VotoDeputado,
+  type ResumoPlacar,
 } from "@/types";
 import { sleep, getDefaultHeaders } from "@/lib/utils";
 
@@ -389,6 +393,155 @@ function normalizarVotacao(v: CamaraFederalVotacaoItem): Votacao {
       null,
     uri: v.uri ?? null,
   };
+}
+
+// =============================================================================
+// DEPUTADOS
+// =============================================================================
+
+/**
+ * Lista deputados federais com filtros opcionais.
+ * Retorna até `itens` deputados por página (máx. 100).
+ */
+export async function buscarDeputados(params: {
+  siglaUf?: string;
+  siglaPartido?: string;
+  nome?: string;
+  pagina?: number;
+  itens?: number;
+}): Promise<{ dados: Deputado[]; totalPaginas: number }> {
+  const queryParams: Record<string, string | number> = {
+    pagina: params.pagina ?? 1,
+    itens: params.itens ?? 100,
+    ordem: "ASC",
+    ordenarPor: "nome",
+  };
+
+  if (params.siglaUf) queryParams.siglaUf = params.siglaUf;
+  if (params.siglaPartido) queryParams.siglaPartido = params.siglaPartido;
+  if (params.nome) queryParams.nome = params.nome;
+
+  try {
+    const response = await client.get<CamaraFederalEnvelope<Deputado[]>>(
+      "/deputados",
+      { params: queryParams }
+    );
+
+    const links = response.data.links ?? [];
+    const lastLink = links.find((l) => l.rel === "last");
+    let totalPaginas = params.pagina ?? 1;
+    if (lastLink?.href) {
+      const m = lastLink.href.match(/pagina=(\d+)/);
+      if (m) totalPaginas = parseInt(m[1], 10);
+    }
+
+    return { dados: response.data.dados ?? [], totalPaginas };
+  } catch {
+    return { dados: [], totalPaginas: 1 };
+  }
+}
+
+/**
+ * Lista todos os partidos com representação na Câmara Federal.
+ */
+export async function buscarPartidos(): Promise<Partido[]> {
+  try {
+    const response = await client.get<CamaraFederalEnvelope<Partido[]>>(
+      "/partidos",
+      { params: { itens: 100, ordem: "ASC", ordenarPor: "sigla" } }
+    );
+    return response.data.dados ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// =============================================================================
+// BUSCA DIRETA (SEM SALVAR NO BANCO)
+// =============================================================================
+
+/**
+ * Busca proposições diretamente na API da Câmara com filtros avançados.
+ * Não persiste no banco — usado para consultas ao vivo.
+ */
+export async function buscarProposicoesLive(params: {
+  keywords?: string;
+  siglaTipo?: string;
+  siglaUfAutor?: string;
+  siglaPartidoAutor?: string;
+  idDeputadoAutor?: number;
+  ano?: number;
+  dataInicio?: string;
+  pagina?: number;
+  itens?: number;
+}): Promise<{ dados: Proposicao[]; temProxima: boolean }> {
+  const queryParams: Record<string, string | number> = {
+    pagina: params.pagina ?? 1,
+    itens: params.itens ?? 20,
+  };
+
+  if (params.keywords) queryParams.keywords = params.keywords;
+  if (params.siglaTipo) queryParams.siglaTipo = params.siglaTipo;
+  if (params.siglaUfAutor) queryParams.siglaUfAutor = params.siglaUfAutor;
+  if (params.siglaPartidoAutor) queryParams.siglaPartidoAutor = params.siglaPartidoAutor;
+  if (params.idDeputadoAutor) queryParams.idDeputadoAutor = params.idDeputadoAutor;
+  if (params.ano) queryParams.ano = params.ano;
+  if (params.dataInicio) queryParams.dataInicio = params.dataInicio;
+
+  try {
+    const response = await client.get<CamaraFederalEnvelope<CamaraFederalProposicaoItem[]>>(
+      "/proposicoes",
+      { params: queryParams }
+    );
+
+    const links = response.data.links ?? [];
+    const temProxima = links.some((l) => l.rel === "next");
+    const dados = (response.data.dados ?? []).map((item) => normalizarItemListagem(item));
+
+    return { dados, temProxima };
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      return { dados: [], temProxima: false };
+    }
+    throw new Error(
+      `[CamaraFederal] buscarProposicoesLive: ` +
+      (error instanceof Error ? error.message : String(error))
+    );
+  }
+}
+
+// =============================================================================
+// VOTAÇÕES — ANÁLISE DE VOTOS
+// =============================================================================
+
+/**
+ * Busca o registro individual de votos de uma votação específica.
+ * Retorna a lista de deputados e como cada um votou.
+ */
+export async function buscarVotosDeVotacao(votacaoId: string): Promise<VotoDeputado[]> {
+  try {
+    const response = await client.get<CamaraFederalEnvelope<VotoDeputado[]>>(
+      `/votacoes/${votacaoId}/votos`
+    );
+    return response.data.dados ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Calcula o placar consolidado a partir dos votos individuais.
+ */
+export function calcularPlacar(votos: VotoDeputado[]): ResumoPlacar {
+  const placar: ResumoPlacar = { sim: 0, nao: 0, abstencao: 0, obstrucao: 0, total: votos.length };
+  for (const v of votos) {
+    const tipo = v.tipoVoto.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
+    if (tipo === "sim") placar.sim++;
+    else if (tipo === "nao" || tipo === "não") placar.nao++;
+    else if (tipo.includes("absten")) placar.abstencao++;
+    else if (tipo.includes("obstru")) placar.obstrucao++;
+  }
+  return placar;
 }
 
 export { client as camaraFederalClient };

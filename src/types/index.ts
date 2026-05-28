@@ -233,6 +233,50 @@ export interface ApiError {
   details?: string;
 }
 
+// ─── Deputados ────────────────────────────────────────────────────────────────
+
+/** Deputado retornado por /deputados */
+export interface Deputado {
+  id: number;
+  uri?: string;
+  nome: string;
+  siglaPartido: string;
+  siglaUf: string;
+  idLegislatura?: number;
+  urlFoto: string;
+  email: string;
+}
+
+/** Partido retornado por /partidos */
+export interface Partido {
+  id: number;
+  sigla: string;
+  nome: string;
+  uri?: string;
+}
+
+/** Voto individual de um deputado em uma votação */
+export interface VotoDeputado {
+  tipoVoto: string; // "Sim" | "Não" | "Abstenção" | "Obstrução" | "Art. 17"
+  dataRegistroVoto: string;
+  deputado_: {
+    id: number;
+    nome: string;
+    siglaPartido: string;
+    siglaUf: string;
+    urlFoto: string;
+  };
+}
+
+/** Resumo de placar de uma votação */
+export interface ResumoPlacar {
+  sim: number;
+  nao: number;
+  abstencao: number;
+  obstrucao: number;
+  total: number;
+}
+
 /** Estatísticas do dashboard */
 export interface DashboardStats {
   totalProposicoes: number;

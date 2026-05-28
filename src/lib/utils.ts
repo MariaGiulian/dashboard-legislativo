@@ -87,17 +87,26 @@ export function validateKeyword(keyword: string): string | null {
 
 // ─── Cores e Badges ───────────────────────────────────────────────────────────
 
-/** Retorna a classe de cor baseada no tipo de proposição */
+/** Retorna a classe de cor baseada no tipo de proposição (tema claro) */
 export function getProposicaoColor(siglaTipo: string): string {
   const colors: Record<string, string> = {
-    PL: "bg-blue-500/20 text-blue-300 border-blue-500/30",
-    PEC: "bg-purple-500/20 text-purple-300 border-purple-500/30",
-    PDL: "bg-orange-500/20 text-orange-300 border-orange-500/30",
-    PLP: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
-    MPV: "bg-red-500/20 text-red-300 border-red-500/30",
-    INC: "bg-slate-500/20 text-slate-300 border-slate-500/30",
+    PL:  "bg-blue-100 text-blue-700 border-blue-200",
+    PEC: "bg-purple-100 text-purple-700 border-purple-200",
+    PDL: "bg-orange-100 text-orange-700 border-orange-200",
+    PLP: "bg-cyan-100 text-cyan-700 border-cyan-200",
+    MPV: "bg-red-100 text-red-700 border-red-200",
+    INC: "bg-gray-100 text-gray-600 border-gray-200",
+    REQ: "bg-gray-100 text-gray-600 border-gray-200",
   };
-  return colors[siglaTipo] ?? "bg-slate-500/20 text-slate-300 border-slate-500/30";
+  return colors[siglaTipo] ?? "bg-gray-100 text-gray-600 border-gray-200";
+}
+
+/** Retorna cor de badge para resultado de votação */
+export function getResultadoColor(resultado: string | null | undefined): string {
+  if (!resultado) return "bg-gray-100 text-gray-500 border-gray-200";
+  if (resultado === "Aprovada") return "bg-green-100 text-green-700 border-green-200";
+  if (resultado === "Rejeitada") return "bg-red-100 text-red-700 border-red-200";
+  return "bg-gray-100 text-gray-500 border-gray-200";
 }
 
 /** Retorna cor baseada na casa legislativa */

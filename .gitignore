@@ -45,3 +45,4 @@ next-env.d.ts
 
 # Prisma (manter schema, ignorar client gerado)
 node_modules/.prisma/
+.vercel
