@@ -7,7 +7,7 @@
  *
  * ATENÇÃO: Scrapers são frágeis a mudanças de layout.
  * Se as buscas pararem de funcionar, inspecione:
- *   https://www.camarapoa.rs.gov.br/pesquisa-de-proposicoes
+ *   https://www.camarapoa.rs.gov.br/processos
  * e atualize os seletores CSS abaixo.
  */
 
@@ -18,7 +18,7 @@ import { type CamaraPOAProposicao, type Proposicao } from "@/types";
 import { generatePoaId, getDefaultHeaders, sleep } from "@/lib/utils";
 
 const BASE_URL = "https://www.camarapoa.rs.gov.br";
-const SEARCH_URL = `${BASE_URL}/pesquisa-de-proposicoes`;
+const SEARCH_URL = `${BASE_URL}/projetos`;
 const REQUEST_DELAY_MS = 1000; // mais conservador por ser scraping
 
 const client = axios.create({
@@ -34,6 +34,15 @@ const client = axios.create({
   },
 });
 
+export interface BuscarProposicoesPOAParams {
+  keyword?: string;
+  tipo?: string;
+  autor?: string;
+  andamento?: "todos" | "em_tramitacao" | "aprovados_em";
+  aprovadosEm?: number;
+  pagina?: number;
+}
+
 // ─── Interface pública ────────────────────────────────────────────────────────
 
 /**
@@ -47,12 +56,31 @@ const client = axios.create({
  */
 export async function buscarProposicoesPOA(keyword: string): Promise<Proposicao[]> {
   try {
-    const raw = await scrapeSearchResults(keyword);
+    const raw = await scrapeSearchResults({ keyword });
     return raw.map(normalizarProposicaoPOA);
   } catch (error) {
     // Falha silenciosa com log — scraping pode quebrar sem aviso
     console.warn(
       `[CâmaraPOA] Busca por "${keyword}" falhou:`,
+      error instanceof Error ? error.message : error
+    );
+    return [];
+  }
+}
+
+/**
+ * Busca proposições da Câmara Municipal de POA usando os filtros do formulário
+ * oficial de /processos.
+ */
+export async function buscarProposicoesPOAFiltradas(
+  params: BuscarProposicoesPOAParams
+): Promise<Proposicao[]> {
+  try {
+    const raw = await scrapeSearchResults(params);
+    return raw.map(normalizarProposicaoPOA);
+  } catch (error) {
+    console.warn(
+      "[CâmaraPOA] Busca filtrada falhou:",
       error instanceof Error ? error.message : error
     );
     return [];
@@ -87,18 +115,25 @@ export async function buscarProposicoesPOAPorKeywords(
 // ─── Scraping ─────────────────────────────────────────────────────────────────
 
 /** Acessa a página de busca e extrai os resultados */
-async function scrapeSearchResults(keyword: string): Promise<CamaraPOAProposicao[]> {
+async function scrapeSearchResults(
+  filtros: BuscarProposicoesPOAParams
+): Promise<CamaraPOAProposicao[]> {
   const response = await client.get(SEARCH_URL, {
+    headers: {
+      Accept: "text/javascript, application/javascript, */*;q=0.8",
+      "X-Requested-With": "XMLHttpRequest",
+    },
     params: {
-      tipo: "",
-      numero: "",
-      ano: "",
-      assunto: keyword,
-      autor: "",
+      busca: filtros.keyword || undefined,
+      tipo: filtros.tipo || undefined,
+      autor: filtros.autor || undefined,
+      andamento: filtros.andamento ?? "todos",
+      aprovados_em: filtros.aprovadosEm,
+      page: filtros.pagina && filtros.pagina > 1 ? filtros.pagina : undefined,
     },
   });
 
-  return parseSearchPage(response.data, keyword);
+  return parseSearchPage(response.data);
 }
 
 /**
@@ -110,9 +145,39 @@ async function scrapeSearchResults(keyword: string): Promise<CamaraPOAProposicao
  *
  * Seletores alternativos são tentados em sequência para robustez.
  */
-function parseSearchPage(html: string, keyword: string): CamaraPOAProposicao[] {
+function parseSearchPage(responseBody: string): CamaraPOAProposicao[] {
+  const html = extractHtmlFromAjaxResponse(responseBody);
   const $ = cheerio.load(html);
   const resultados: CamaraPOAProposicao[] = [];
+
+  $(".lista section.ui.items article.item, .lista article.item").each((_, el) => {
+    const linkEl = $(el).find("h2.header a, h2.ui.header a").first();
+    const titulo = normalizeSpaces(linkEl.text());
+    const link = linkEl.attr("href") ?? "";
+    const ementa = normalizeSpaces($(el).find(".description p").first().text());
+    const autor = extrairCampoListagem($, el, "Autor") || "Não informado";
+    const status = extrairCampoListagem($, el, "Situação") || "Em tramitação";
+    const tramitacaoIso = $(el).find("time").first().attr("datetime");
+    const parsed = parseTituloProcesso(titulo);
+
+    if (!parsed || !ementa) return;
+
+    resultados.push({
+      id: generatePoaId(parsed.siglaTipo, parsed.numero, parsed.ano),
+      numero: parsed.numero,
+      ano: parsed.ano,
+      siglaTipo: parsed.siglaTipo,
+      ementa,
+      autor,
+      status,
+      dataApresentacao: tramitacaoIso
+        ? new Date(tramitacaoIso).toISOString()
+        : new Date().toISOString(),
+      urlOriginal: normalizeUrl(link),
+    });
+  });
+
+  if (resultados.length > 0) return resultados;
 
   // Tenta seletor de tabela (layout mais comum)
   const rows = $("table.table tbody tr, .resultado-proposicoes tr").toArray();
@@ -147,7 +212,7 @@ function parseSearchPage(html: string, keyword: string): CamaraPOAProposicao[] {
   }
 
   // Fallback: tenta lista em formato de cards
-  $(".card-proposicao, .item-proposicao, article").each((_, el) => {
+  $(".card-proposicao, .item-proposicao").each((_, el) => {
     const tipo = $(el).find(".tipo, .badge").first().text().trim();
     const ementa = $(el).find(".ementa, p").first().text().trim();
     const link = $(el).find("a").first().attr("href") ?? "";
@@ -167,7 +232,7 @@ function parseSearchPage(html: string, keyword: string): CamaraPOAProposicao[] {
       autor: $(el).find(".autor").first().text().trim() || "Não informado",
       status: $(el).find(".status, .situacao").first().text().trim() || "Em tramitação",
       dataApresentacao: parseDataBR(dataText) || new Date().toISOString(),
-      urlOriginal: link.startsWith("http") ? link : `${BASE_URL}${link}`,
+      urlOriginal: normalizeUrl(link),
     });
   });
 
@@ -180,6 +245,69 @@ function parseNumeroAno(texto: string): { numero: number; ano: number } {
   const match = texto.match(/(\d+)[\/\-](\d{4})/);
   if (!match) return { numero: 0, ano: 0 };
   return { numero: parseInt(match[1], 10), ano: parseInt(match[2], 10) };
+}
+
+function parseTituloProcesso(
+  titulo: string
+): { numero: number; ano: number; siglaTipo: string } | null {
+  const tipoMatch = titulo.match(/-\s*([A-Z]{2,5})(?:\s+(\d+)\s*\/\s*(\d{2,4}))?/);
+  const procMatch = titulo.match(/PROC\.\s*(?:N[º°]\s*)?(\d+)\s*\/\s*(\d{2,4})/i);
+
+  if (!tipoMatch && !procMatch) return null;
+
+  const siglaTipo = tipoMatch?.[1] ?? "PROC";
+  const numero = parseInt(tipoMatch?.[2] ?? procMatch?.[1] ?? "0", 10);
+  const ano = expandAno(tipoMatch?.[3] ?? procMatch?.[2] ?? "");
+
+  if (!numero || !ano) return null;
+  return { numero, ano, siglaTipo };
+}
+
+function expandAno(ano: string): number {
+  const parsed = parseInt(ano, 10);
+  if (!parsed) return 0;
+  if (ano.length === 2) return parsed >= 90 ? 1900 + parsed : 2000 + parsed;
+  return parsed;
+}
+
+function extrairCampoListagem(
+  $: cheerio.CheerioAPI,
+  el: Element,
+  label: string
+): string {
+  let valor = "";
+
+  $(el).find(".meta .ui.list .item").each((_, item) => {
+    const header = normalizeSpaces($(item).find(".header").first().text());
+    if (header.toLowerCase() !== label.toLowerCase()) return;
+
+    const clone = $(item).clone();
+    clone.find(".header").remove();
+    valor = normalizeSpaces(clone.text());
+  });
+
+  return valor;
+}
+
+function extractHtmlFromAjaxResponse(body: string): string {
+  const match = body.match(/replaceWith\('([\s\S]*)'\);\s*\$\(document\)/);
+  if (!match) return body;
+
+  return match[1]
+    .replace(/\\n/g, "\n")
+    .replace(/\\"/g, "\"")
+    .replace(/\\\//g, "/")
+    .replace(/\\'/g, "'")
+    .replace(/\\\\/g, "\\");
+}
+
+function normalizeSpaces(texto: string): string {
+  return texto.replace(/\s+/g, " ").trim();
+}
+
+function normalizeUrl(url: string): string {
+  if (!url) return BASE_URL;
+  return url.startsWith("http") ? url : `${BASE_URL}${url}`;
 }
 
 function extrairAutor($: cheerio.CheerioAPI, row: Element): string {

@@ -482,12 +482,29 @@ export async function buscarProposicoesLive(params: {
 
   if (params.keywords) queryParams.keywords = params.keywords;
   if (params.siglaTipo) queryParams.siglaTipo = params.siglaTipo;
-  if (params.siglaUfAutor) queryParams.siglaUfAutor = params.siglaUfAutor;
-  if (params.siglaPartidoAutor) queryParams.siglaPartidoAutor = params.siglaPartidoAutor;
   if (params.idDeputadoAutor) queryParams.idDeputadoAutor = params.idDeputadoAutor;
   if (params.ano) queryParams.ano = params.ano;
   if (params.dataInicio) queryParams.dataInicio = params.dataInicio;
 
+  if (params.idDeputadoAutor) {
+    return buscarProposicoesLiveRequest(queryParams);
+  }
+
+  if (params.siglaUfAutor || params.siglaPartidoAutor) {
+    return buscarProposicoesPorBancada({
+      ...params,
+      queryParams,
+      pagina: params.pagina ?? 1,
+      itens: params.itens ?? 20,
+    });
+  }
+
+  return buscarProposicoesLiveRequest(queryParams);
+}
+
+async function buscarProposicoesLiveRequest(
+  queryParams: Record<string, string | number>
+): Promise<{ dados: Proposicao[]; temProxima: boolean }> {
   try {
     const response = await client.get<CamaraFederalEnvelope<CamaraFederalProposicaoItem[]>>(
       "/proposicoes",
@@ -508,6 +525,64 @@ export async function buscarProposicoesLive(params: {
       (error instanceof Error ? error.message : String(error))
     );
   }
+}
+
+async function buscarProposicoesPorBancada(params: {
+  siglaUfAutor?: string;
+  siglaPartidoAutor?: string;
+  queryParams: Record<string, string | number>;
+  pagina: number;
+  itens: number;
+}): Promise<{ dados: Proposicao[]; temProxima: boolean }> {
+  const deputados = await buscarDeputados({
+    siglaUf: params.siglaUfAutor,
+    siglaPartido: params.siglaPartidoAutor,
+    itens: 100,
+  });
+
+  if (deputados.dados.length === 0) {
+    return { dados: [], temProxima: false };
+  }
+
+  const itensDesejados = params.pagina * params.itens;
+  const proposicoesPorDeputado = Math.min(30, Math.max(10, Math.ceil(itensDesejados / 2)));
+  const idsSeen = new Set<string>();
+  const combinadas: Proposicao[] = [];
+
+  for (const deputado of deputados.dados) {
+    const resultado = await buscarProposicoesLiveRequest({
+      ...params.queryParams,
+      pagina: 1,
+      itens: proposicoesPorDeputado,
+      idDeputadoAutor: deputado.id,
+    });
+
+    for (const proposicao of resultado.dados) {
+      if (idsSeen.has(proposicao.id)) continue;
+      idsSeen.add(proposicao.id);
+      combinadas.push({
+        ...proposicao,
+        autor: deputado.nome,
+        autorUri: deputado.uri ?? `${BASE_URL}/deputados/${deputado.id}`,
+      });
+    }
+
+    await sleep(80);
+  }
+
+  combinadas.sort(
+    (a, b) =>
+      new Date(b.dataApresentacao).getTime() -
+      new Date(a.dataApresentacao).getTime()
+  );
+
+  const inicio = (params.pagina - 1) * params.itens;
+  const fim = inicio + params.itens;
+
+  return {
+    dados: combinadas.slice(inicio, fim),
+    temProxima: combinadas.length > fim,
+  };
 }
 
 // =============================================================================
