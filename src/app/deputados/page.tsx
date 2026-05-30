@@ -253,7 +253,7 @@ function DeputadoCard({ deputado }: { deputado: Deputado }) {
 
       {/* Link para proposições do deputado */}
       <Link
-        href={`/proposicoes?modo=direto&deputadoId=${id}&deputadoNome=${encodeURIComponent(nome)}`}
+        href={`/proposicoes?modo=direto&casaBusca=federal&deputadoId=${id}&deputadoNome=${encodeURIComponent(nome)}`}
         className="text-xs text-blue-600 hover:underline flex items-center gap-1"
       >
         <BookOpen className="w-3 h-3" />

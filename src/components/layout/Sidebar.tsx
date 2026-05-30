@@ -28,6 +28,12 @@ const navItems = [
     description: "Lista por estado e partido",
   },
   {
+    href: "/vereadores",
+    icon: Users,
+    label: "Vereadores",
+    description: "Câmara Municipal de POA",
+  },
+  {
     href: "/proposicoes",
     icon: BookOpen,
     label: "Proposições",

@@ -14,7 +14,7 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
 import type { Element } from "domhandler";
-import { type CamaraPOAProposicao, type Proposicao } from "@/types";
+import { type CamaraPOAProposicao, type Proposicao, type VereadorPOA } from "@/types";
 import { generatePoaId, getDefaultHeaders, sleep } from "@/lib/utils";
 
 const BASE_URL = "https://www.camarapoa.rs.gov.br";
@@ -110,6 +110,22 @@ export async function buscarProposicoesPOAPorKeywords(
   }
 
   return resultados;
+}
+
+/**
+ * Lista vereadores da Câmara Municipal de Porto Alegre.
+ */
+export async function buscarVereadoresPOA(): Promise<VereadorPOA[]> {
+  try {
+    const response = await client.get(`${BASE_URL}/vereadores`);
+    return parseVereadoresPage(response.data);
+  } catch (error) {
+    console.warn(
+      "[CâmaraPOA] Lista de vereadores falhou:",
+      error instanceof Error ? error.message : error
+    );
+    return [];
+  }
 }
 
 // ─── Scraping ─────────────────────────────────────────────────────────────────
@@ -237,6 +253,52 @@ function parseSearchPage(responseBody: string): CamaraPOAProposicao[] {
   });
 
   return resultados;
+}
+
+function parseVereadoresPage(responseBody: string): VereadorPOA[] {
+  const $ = cheerio.load(responseBody);
+  const vereadores: VereadorPOA[] = [];
+  const vistos = new Set<string>();
+
+  $("a[href*='/vereadores/']").each((_, el) => {
+    const href = $(el).attr("href") ?? "";
+    const url = normalizeUrl(href);
+    const slug = url.split("/vereadores/")[1]?.split(/[?#]/)[0];
+    if (!slug || vistos.has(slug)) return;
+
+    const container = $(el).closest("article, .card, .item, li, div");
+    const rawText = normalizeSpaces($(el).text() || container.text());
+    const nomePartido = parseNomePartido(rawText);
+    if (!nomePartido) return;
+
+    const foto =
+      container.find("img").first().attr("src") ||
+      $(el).find("img").first().attr("src") ||
+      null;
+
+    vistos.add(slug);
+    vereadores.push({
+      id: slug,
+      nome: nomePartido.nome,
+      partido: nomePartido.partido,
+      url,
+      fotoUrl: foto ? normalizeUrl(foto) : null,
+      situacao: rawText.toLowerCase().includes("substituindo") ? "Substituto" : null,
+    });
+  });
+
+  return vereadores.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+function parseNomePartido(texto: string): { nome: string; partido: string } | null {
+  const match = texto.match(/^(.+?)\s*\(([A-Z0-9]+)\)/);
+  if (!match) return null;
+
+  const nome = normalizeSpaces(match[1]);
+  const partido = match[2];
+  if (!nome || nome.length < 3) return null;
+
+  return { nome, partido };
 }
 
 // ─── Helpers de parsing ───────────────────────────────────────────────────────

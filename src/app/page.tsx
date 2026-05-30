@@ -13,6 +13,7 @@ import {
   Building2,
   AlertCircle,
   Wifi,
+  Users,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import type { DashboardStats, Notification, Proposicao } from "@/types";
@@ -127,8 +128,9 @@ export default async function DashboardPage() {
                 </pre>
                 <p className="text-xs text-amber-600 mt-2">
                   Enquanto isso, você já pode usar{" "}
-                  <a href="/deputados" className="underline font-medium">Deputados</a> e{" "}
-                  <a href="/proposicoes?modo=direto" className="underline font-medium">Consulta direta à Câmara</a>{" "}
+                  <a href="/deputados" className="underline font-medium">Deputados</a>,{" "}
+                  <a href="/vereadores" className="underline font-medium">Vereadores</a> e{" "}
+                  <a href="/proposicoes?modo=direto" className="underline font-medium">Consulta direta às Câmaras</a>{" "}
                   — essas páginas não dependem do banco.
                 </p>
               </div>
@@ -137,7 +139,7 @@ export default async function DashboardPage() {
         )}
 
         {/* Acesso rápido às páginas ao vivo (sempre visível) */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           <a
             href="/deputados"
             className="card border-blue-200 bg-blue-50 hover:border-blue-300 hover:shadow-md transition-all flex items-center gap-3 py-4"
@@ -151,15 +153,39 @@ export default async function DashboardPage() {
             </div>
           </a>
           <a
-            href="/proposicoes?modo=direto"
+            href="/vereadores"
+            className="card border-emerald-200 bg-emerald-50 hover:border-emerald-300 hover:shadow-md transition-all flex items-center gap-3 py-4"
+          >
+            <div className="w-10 h-10 rounded-lg bg-emerald-100 border border-emerald-200 flex items-center justify-center flex-shrink-0">
+              <Users className="w-5 h-5 text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">Vereadores de POA</p>
+              <p className="text-xs text-gray-500">Lista da Câmara Municipal — ao vivo</p>
+            </div>
+          </a>
+          <a
+            href="/proposicoes?modo=direto&casaBusca=federal"
             className="card border-green-200 bg-green-50 hover:border-green-300 hover:shadow-md transition-all flex items-center gap-3 py-4"
           >
             <div className="w-10 h-10 rounded-lg bg-green-100 border border-green-200 flex items-center justify-center flex-shrink-0">
               <Wifi className="w-5 h-5 text-green-600" />
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-900">Consulta à Câmara</p>
-              <p className="text-xs text-gray-500">Busca direta nos dados abertos — ao vivo</p>
+              <p className="text-sm font-medium text-gray-900">Pesquisa Federal</p>
+              <p className="text-xs text-gray-500">Projetos da Câmara Federal — ao vivo</p>
+            </div>
+          </a>
+          <a
+            href="/proposicoes?modo=direto&casaBusca=poa"
+            className="card border-lime-200 bg-lime-50 hover:border-lime-300 hover:shadow-md transition-all flex items-center gap-3 py-4"
+          >
+            <div className="w-10 h-10 rounded-lg bg-lime-100 border border-lime-200 flex items-center justify-center flex-shrink-0">
+              <Wifi className="w-5 h-5 text-lime-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">Pesquisa Municipal</p>
+              <p className="text-xs text-gray-500">Projetos da Câmara de POA — ao vivo</p>
             </div>
           </a>
         </section>

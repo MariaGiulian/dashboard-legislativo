@@ -3,8 +3,7 @@
  *
  * Dois modos:
  *   - "monitoradas" (padrão): PLs salvos no banco, filtrados por keyword
- *   - "direto": consulta ao vivo na API da Câmara Federal com filtros avançados
- *     (UF do autor, partido, tipo, palavras-chave, ano, deputado específico)
+ *   - "direto": consulta ao vivo na Câmara Federal ou Municipal com filtros
  */
 
 import { prisma } from "@/lib/db";
@@ -12,6 +11,7 @@ import { Header } from "@/components/layout/Header";
 import { ProposicaoCard } from "@/components/ProposicaoCard";
 import { BookOpen, Filter, Wifi, Database, Search, AlertCircle } from "lucide-react";
 import { buscarProposicoesLive, buscarPartidos } from "@/lib/api/camara-federal";
+import { buscarProposicoesPOAFiltradas } from "@/lib/api/camara-poa";
 import type { Proposicao } from "@/types";
 
 export const revalidate = 300;
@@ -24,7 +24,7 @@ const UFS = [
 
 const TIPOS = ["PL","PEC","PLP","PDL","MPV","REQ","INC"];
 
-const ANOS = Array.from({ length: 6 }, (_, i) => 2025 - i);
+const ANOS = Array.from({ length: 8 }, (_, i) => new Date().getFullYear() - i);
 
 interface SearchParams {
   // Modo
@@ -36,6 +36,7 @@ interface SearchParams {
   pagina?: string;
   // Filtros do modo direto
   busca?: string;
+  casaBusca?: string;
   uf?: string;
   partido?: string;
   tipoD?: string;
@@ -150,7 +151,7 @@ async function ProposicoesBancoPage({ params }: { params: SearchParams }) {
           className="text-xs text-blue-600 hover:underline flex items-center gap-1"
         >
           <Wifi className="w-3 h-3" />
-          Consultar diretamente a Câmara →
+          Consultar projetos ao vivo →
         </a>
       </div>
 
@@ -170,7 +171,7 @@ async function ProposicoesBancoPage({ params }: { params: SearchParams }) {
               </p>
               <a href="/proposicoes?modo=direto" className="btn-primary text-xs inline-flex">
                 <Wifi className="w-3 h-3" />
-                Consultar Câmara Federal ao vivo
+                Consultar projetos ao vivo
               </a>
             </div>
           </div>
@@ -314,7 +315,7 @@ async function ProposicoesBancoPage({ params }: { params: SearchParams }) {
               </p>
               <a href="/proposicoes?modo=direto" className="btn-blue mt-4 text-sm">
                 <Wifi className="w-4 h-4" />
-                Consultar Câmara Federal ao vivo
+                Consultar projetos ao vivo
               </a>
             </div>
           )}
@@ -328,34 +329,53 @@ async function ProposicoesBancoPage({ params }: { params: SearchParams }) {
 
 async function ProposicoesDiretoPage({ params }: { params: SearchParams }) {
   const paginaD = Math.max(1, parseInt(params.paginaD ?? "1", 10));
+  const casaBusca = params.casaBusca === "poa" ? "poa" : "federal";
 
-  const temFiltro =
-    params.busca || params.uf || params.partido || params.tipoD || params.ano || params.deputadoId;
+  const temFiltro = casaBusca === "poa"
+    ? Boolean(params.busca || params.tipoD || params.ano)
+    : Boolean(params.busca || params.uf || params.partido || params.tipoD || params.ano || params.deputadoId);
 
   let proposicoes: Proposicao[] = [];
   let temProxima = false;
-  const partidos = await buscarPartidos();
+  const partidos = casaBusca === "federal" ? await buscarPartidos() : [];
 
   if (temFiltro) {
-    const resultado = await buscarProposicoesLive({
-      keywords: params.busca || undefined,
-      siglaTipo: params.tipoD || undefined,
-      siglaUfAutor: params.uf || undefined,
-      siglaPartidoAutor: params.partido || undefined,
-      idDeputadoAutor: params.deputadoId ? parseInt(params.deputadoId, 10) : undefined,
-      ano: params.ano ? parseInt(params.ano, 10) : undefined,
-      pagina: paginaD,
-      itens: 20,
-    });
-    proposicoes = resultado.dados;
-    temProxima = resultado.temProxima;
+    if (casaBusca === "poa") {
+      proposicoes = await buscarProposicoesPOAFiltradas({
+        keyword: params.busca || undefined,
+        tipo: params.tipoD || undefined,
+        pagina: paginaD,
+      });
+
+      if (params.ano) {
+        const anoFiltro = parseInt(params.ano, 10);
+        proposicoes = proposicoes.filter((p) => p.ano === anoFiltro);
+      }
+    } else {
+      const resultado = await buscarProposicoesLive({
+        keywords: params.busca || undefined,
+        siglaTipo: params.tipoD || undefined,
+        siglaUfAutor: params.uf || undefined,
+        siglaPartidoAutor: params.partido || undefined,
+        idDeputadoAutor: params.deputadoId ? parseInt(params.deputadoId, 10) : undefined,
+        ano: params.ano ? parseInt(params.ano, 10) : undefined,
+        pagina: paginaD,
+        itens: 20,
+      });
+      proposicoes = resultado.dados;
+      temProxima = resultado.temProxima;
+    }
   }
 
   return (
     <div className="flex flex-col flex-1">
       <Header
-        title="Consulta à Câmara Federal"
-        subtitle="Busca direta nos dados abertos — sem necessidade de configurar temas"
+        title={casaBusca === "poa" ? "Consulta à Câmara Municipal" : "Consulta à Câmara Federal"}
+        subtitle={
+          casaBusca === "poa"
+            ? "Busca direta nos projetos da Câmara Municipal de Porto Alegre"
+            : "Busca direta nos dados abertos — sem necessidade de configurar temas"
+        }
       />
 
       {/* Barra de modo */}
@@ -381,11 +401,11 @@ async function ProposicoesDiretoPage({ params }: { params: SearchParams }) {
             Filtros de busca
           </div>
 
-          {params.deputadoNome && (
+          {casaBusca === "federal" && params.deputadoNome && (
             <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
               Proposições de <strong>{params.deputadoNome}</strong>
               <a
-                href="/proposicoes?modo=direto"
+                href="/proposicoes?modo=direto&casaBusca=federal"
                 className="block mt-1 text-blue-500 hover:underline"
               >
                 Limpar filtro ×
@@ -396,12 +416,20 @@ async function ProposicoesDiretoPage({ params }: { params: SearchParams }) {
           <form method="GET" action="/proposicoes" className="space-y-3">
             <input type="hidden" name="modo" value="direto" />
             <input type="hidden" name="paginaD" value="1" />
-            {params.deputadoId && (
+            {casaBusca === "federal" && params.deputadoId && (
               <input type="hidden" name="deputadoId" value={params.deputadoId} />
             )}
-            {params.deputadoNome && (
+            {casaBusca === "federal" && params.deputadoNome && (
               <input type="hidden" name="deputadoNome" value={params.deputadoNome} />
             )}
+
+            <div>
+              <label className="label">Origem</label>
+              <select name="casaBusca" defaultValue={casaBusca} className="input text-sm">
+                <option value="federal">Câmara Federal</option>
+                <option value="poa">Câmara Municipal (POA)</option>
+              </select>
+            </div>
 
             {/* Palavras-chave */}
             <div>
@@ -426,27 +454,31 @@ async function ProposicoesDiretoPage({ params }: { params: SearchParams }) {
               </select>
             </div>
 
-            {/* Estado do autor */}
-            <div>
-              <label className="label">Estado do autor</label>
-              <select name="uf" defaultValue={params.uf ?? ""} className="input text-sm">
-                <option value="">Todos</option>
-                {UFS.map((uf) => (
-                  <option key={uf} value={uf}>{uf}</option>
-                ))}
-              </select>
-            </div>
+            {casaBusca === "federal" && (
+              <>
+                {/* Estado do autor */}
+                <div>
+                  <label className="label">Estado do autor</label>
+                  <select name="uf" defaultValue={params.uf ?? ""} className="input text-sm">
+                    <option value="">Todos</option>
+                    {UFS.map((uf) => (
+                      <option key={uf} value={uf}>{uf}</option>
+                    ))}
+                  </select>
+                </div>
 
-            {/* Partido do autor */}
-            <div>
-              <label className="label">Partido do autor</label>
-              <select name="partido" defaultValue={params.partido ?? ""} className="input text-sm">
-                <option value="">Todos</option>
-                {partidos.map((p) => (
-                  <option key={p.id} value={p.sigla}>{p.sigla}</option>
-                ))}
-              </select>
-            </div>
+                {/* Partido do autor */}
+                <div>
+                  <label className="label">Partido do autor</label>
+                  <select name="partido" defaultValue={params.partido ?? ""} className="input text-sm">
+                    <option value="">Todos</option>
+                    {partidos.map((p) => (
+                      <option key={p.id} value={p.sigla}>{p.sigla}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
 
             {/* Ano */}
             <div>
@@ -466,7 +498,7 @@ async function ProposicoesDiretoPage({ params }: { params: SearchParams }) {
 
             {temFiltro && (
               <a
-                href="/proposicoes?modo=direto"
+                href={`/proposicoes?modo=direto&casaBusca=${casaBusca}`}
                 className="btn-secondary w-full justify-center text-xs"
               >
                 Limpar todos
@@ -482,8 +514,8 @@ async function ProposicoesDiretoPage({ params }: { params: SearchParams }) {
               <Search className="w-12 h-12 text-gray-300 mb-3" />
               <p className="text-gray-600 font-medium">Use os filtros para buscar proposições</p>
               <p className="text-sm text-gray-400 mt-1 max-w-sm">
-                Filtre por palavras-chave, partido, estado, tipo ou deputado específico.
-                Os resultados vêm diretamente da API da Câmara Federal.
+                Selecione a origem e filtre por palavras-chave, tipo, ano
+                {casaBusca === "federal" ? ", partido, estado ou deputado específico." : "."}
               </p>
             </div>
           ) : proposicoes.length === 0 ? (
@@ -502,7 +534,7 @@ async function ProposicoesDiretoPage({ params }: { params: SearchParams }) {
                 </p>
                 <span className="badge bg-blue-100 text-blue-700 border-blue-200">
                   <Wifi className="w-3 h-3" />
-                  API da Câmara Federal
+                  {casaBusca === "poa" ? "Câmara Municipal de POA" : "API da Câmara Federal"}
                 </span>
               </div>
 

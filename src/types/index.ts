@@ -255,6 +255,16 @@ export interface Partido {
   uri?: string;
 }
 
+/** Vereador da Câmara Municipal de Porto Alegre */
+export interface VereadorPOA {
+  id: string;
+  nome: string;
+  partido: string;
+  url: string;
+  fotoUrl?: string | null;
+  situacao?: string | null;
+}
+
 /** Voto individual de um deputado em uma votação */
 export interface VotoDeputado {
   tipoVoto: string; // "Sim" | "Não" | "Abstenção" | "Obstrução" | "Art. 17"
