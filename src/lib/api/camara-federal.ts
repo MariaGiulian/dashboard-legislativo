@@ -472,6 +472,9 @@ export async function buscarProposicoesLive(params: {
   idDeputadoAutor?: number;
   ano?: number;
   dataInicio?: string;
+  dataFim?: string;
+  ordem?: "ASC" | "DESC";
+  ordenarPor?: "id";
   pagina?: number;
   itens?: number;
 }): Promise<{ dados: Proposicao[]; temProxima: boolean }> {
@@ -485,6 +488,9 @@ export async function buscarProposicoesLive(params: {
   if (params.idDeputadoAutor) queryParams.idDeputadoAutor = params.idDeputadoAutor;
   if (params.ano) queryParams.ano = params.ano;
   if (params.dataInicio) queryParams.dataInicio = params.dataInicio;
+  if (params.dataFim) queryParams.dataFim = params.dataFim;
+  if (params.ordem) queryParams.ordem = params.ordem;
+  if (params.ordenarPor) queryParams.ordenarPor = params.ordenarPor;
 
   if (params.idDeputadoAutor) {
     return buscarProposicoesLiveRequest(queryParams);

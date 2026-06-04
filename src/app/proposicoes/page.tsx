@@ -9,12 +9,14 @@
 import { prisma } from "@/lib/db";
 import { Header } from "@/components/layout/Header";
 import { ProposicaoCard } from "@/components/ProposicaoCard";
+import { ProposicoesDiretoFilters } from "./ProposicoesDiretoFilters";
 import { BookOpen, Filter, Wifi, Database, Search, AlertCircle } from "lucide-react";
 import { buscarProposicoesLive, buscarPartidos } from "@/lib/api/camara-federal";
 import { buscarProposicoesPOAFiltradas } from "@/lib/api/camara-poa";
 import type { Proposicao } from "@/types";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const UFS = [
   "AC","AL","AP","AM","BA","CE","DF","ES","GO",
@@ -26,7 +28,7 @@ const TIPOS = ["PL","PEC","PLP","PDL","MPV","REQ","INC"];
 
 const ANOS = Array.from({ length: 8 }, (_, i) => new Date().getFullYear() - i);
 
-interface SearchParams {
+export interface SearchParams {
   // Modo
   modo?: string;         // "direto" | undefined (monitoradas)
   // Filtros do modo monitoradas
@@ -47,6 +49,7 @@ interface SearchParams {
 }
 
 const PER_PAGE = 12;
+const PROTOCOLADOS_RECENTES_DIAS = 89;
 
 // ─── Modo monitoradas ────────────────────────────────────────────────────────
 
@@ -330,10 +333,19 @@ async function ProposicoesBancoPage({ params }: { params: SearchParams }) {
 async function ProposicoesDiretoPage({ params }: { params: SearchParams }) {
   const paginaD = Math.max(1, parseInt(params.paginaD ?? "1", 10));
   const casaBusca = params.casaBusca === "poa" ? "poa" : "federal";
+  const paramsBusca = sanitizeDiretoParams(params, casaBusca);
+  const buscaFederalSemFiltro = casaBusca === "federal" && !(
+    paramsBusca.busca ||
+    paramsBusca.uf ||
+    paramsBusca.partido ||
+    paramsBusca.tipoD ||
+    paramsBusca.ano ||
+    paramsBusca.deputadoId
+  );
 
   const temFiltro = casaBusca === "poa"
-    ? Boolean(params.busca || params.tipoD || params.ano)
-    : Boolean(params.busca || params.uf || params.partido || params.tipoD || params.ano || params.deputadoId);
+    ? Boolean(paramsBusca.busca || paramsBusca.tipoD || paramsBusca.ano)
+    : true;
 
   let proposicoes: Proposicao[] = [];
   let temProxima = false;
@@ -342,23 +354,30 @@ async function ProposicoesDiretoPage({ params }: { params: SearchParams }) {
   if (temFiltro) {
     if (casaBusca === "poa") {
       proposicoes = await buscarProposicoesPOAFiltradas({
-        keyword: params.busca || undefined,
-        tipo: params.tipoD || undefined,
+        keyword: paramsBusca.busca || undefined,
+        tipo: paramsBusca.tipoD || undefined,
         pagina: paginaD,
       });
 
-      if (params.ano) {
-        const anoFiltro = parseInt(params.ano, 10);
+      if (paramsBusca.ano) {
+        const anoFiltro = parseInt(paramsBusca.ano, 10);
         proposicoes = proposicoes.filter((p) => p.ano === anoFiltro);
       }
     } else {
+      const periodoProtocolados = buscaFederalSemFiltro
+        ? getPeriodoProtocoladosRecentes()
+        : null;
       const resultado = await buscarProposicoesLive({
-        keywords: params.busca || undefined,
-        siglaTipo: params.tipoD || undefined,
-        siglaUfAutor: params.uf || undefined,
-        siglaPartidoAutor: params.partido || undefined,
-        idDeputadoAutor: params.deputadoId ? parseInt(params.deputadoId, 10) : undefined,
-        ano: params.ano ? parseInt(params.ano, 10) : undefined,
+        keywords: paramsBusca.busca || undefined,
+        siglaTipo: paramsBusca.tipoD || undefined,
+        siglaUfAutor: paramsBusca.uf || undefined,
+        siglaPartidoAutor: paramsBusca.partido || undefined,
+        idDeputadoAutor: paramsBusca.deputadoId ? parseInt(paramsBusca.deputadoId, 10) : undefined,
+        ano: paramsBusca.ano ? parseInt(paramsBusca.ano, 10) : undefined,
+        dataInicio: periodoProtocolados?.dataInicio,
+        dataFim: periodoProtocolados?.dataFim,
+        ordem: periodoProtocolados ? "DESC" : undefined,
+        ordenarPor: periodoProtocolados ? "id" : undefined,
         pagina: paginaD,
         itens: 20,
       });
@@ -374,7 +393,9 @@ async function ProposicoesDiretoPage({ params }: { params: SearchParams }) {
         subtitle={
           casaBusca === "poa"
             ? "Busca direta nos projetos da Câmara Municipal de Porto Alegre"
-            : "Busca direta nos dados abertos — sem necessidade de configurar temas"
+            : buscaFederalSemFiltro
+              ? "Projetos protocolados recentemente nos dados abertos da Câmara"
+              : "Busca direta nos dados abertos — sem necessidade de configurar temas"
         }
       />
 
@@ -401,110 +422,15 @@ async function ProposicoesDiretoPage({ params }: { params: SearchParams }) {
             Filtros de busca
           </div>
 
-          {casaBusca === "federal" && params.deputadoNome && (
-            <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
-              Proposições de <strong>{params.deputadoNome}</strong>
-              <a
-                href="/proposicoes?modo=direto&casaBusca=federal"
-                className="block mt-1 text-blue-500 hover:underline"
-              >
-                Limpar filtro ×
-              </a>
-            </div>
-          )}
-
-          <form method="GET" action="/proposicoes" className="space-y-3">
-            <input type="hidden" name="modo" value="direto" />
-            <input type="hidden" name="paginaD" value="1" />
-            {casaBusca === "federal" && params.deputadoId && (
-              <input type="hidden" name="deputadoId" value={params.deputadoId} />
-            )}
-            {casaBusca === "federal" && params.deputadoNome && (
-              <input type="hidden" name="deputadoNome" value={params.deputadoNome} />
-            )}
-
-            <div>
-              <label className="label">Origem</label>
-              <select name="casaBusca" defaultValue={casaBusca} className="input text-sm">
-                <option value="federal">Câmara Federal</option>
-                <option value="poa">Câmara Municipal (POA)</option>
-              </select>
-            </div>
-
-            {/* Palavras-chave */}
-            <div>
-              <label className="label">Palavras-chave</label>
-              <input
-                type="text"
-                name="busca"
-                defaultValue={params.busca ?? ""}
-                placeholder="Ex: inteligência artificial"
-                className="input text-sm"
-              />
-            </div>
-
-            {/* Tipo */}
-            <div>
-              <label className="label">Tipo</label>
-              <select name="tipoD" defaultValue={params.tipoD ?? ""} className="input text-sm">
-                <option value="">Todos</option>
-                {TIPOS.map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-            </div>
-
-            {casaBusca === "federal" && (
-              <>
-                {/* Estado do autor */}
-                <div>
-                  <label className="label">Estado do autor</label>
-                  <select name="uf" defaultValue={params.uf ?? ""} className="input text-sm">
-                    <option value="">Todos</option>
-                    {UFS.map((uf) => (
-                      <option key={uf} value={uf}>{uf}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Partido do autor */}
-                <div>
-                  <label className="label">Partido do autor</label>
-                  <select name="partido" defaultValue={params.partido ?? ""} className="input text-sm">
-                    <option value="">Todos</option>
-                    {partidos.map((p) => (
-                      <option key={p.id} value={p.sigla}>{p.sigla}</option>
-                    ))}
-                  </select>
-                </div>
-              </>
-            )}
-
-            {/* Ano */}
-            <div>
-              <label className="label">Ano</label>
-              <select name="ano" defaultValue={params.ano ?? ""} className="input text-sm">
-                <option value="">Qualquer ano</option>
-                {ANOS.map((a) => (
-                  <option key={a} value={String(a)}>{a}</option>
-                ))}
-              </select>
-            </div>
-
-            <button type="submit" className="btn-primary w-full justify-center">
-              <Search className="w-4 h-4" />
-              Buscar
-            </button>
-
-            {temFiltro && (
-              <a
-                href={`/proposicoes?modo=direto&casaBusca=${casaBusca}`}
-                className="btn-secondary w-full justify-center text-xs"
-              >
-                Limpar todos
-              </a>
-            )}
-          </form>
+          <ProposicoesDiretoFilters
+            params={paramsBusca}
+            casaBusca={casaBusca}
+            partidos={partidos}
+            ufs={UFS}
+            tipos={TIPOS}
+            anos={ANOS}
+            showClear={temFiltro && !buscaFederalSemFiltro}
+          />
         </aside>
 
         {/* Resultados */}
@@ -531,6 +457,7 @@ async function ProposicoesDiretoPage({ params }: { params: SearchParams }) {
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm text-gray-500">
                   {proposicoes.length} resultado{proposicoes.length !== 1 ? "s" : ""} (página {paginaD})
+                  {buscaFederalSemFiltro ? ` — protocolados nos últimos ${PROTOCOLADOS_RECENTES_DIAS} dias` : ""}
                 </p>
                 <span className="badge bg-blue-100 text-blue-700 border-blue-200">
                   <Wifi className="w-3 h-3" />
@@ -540,7 +467,7 @@ async function ProposicoesDiretoPage({ params }: { params: SearchParams }) {
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 stagger">
                 {proposicoes.map((p) => (
-                  <ProposicaoCard key={p.id} proposicao={p} highlight={params.busca} />
+                  <ProposicaoCard key={p.id} proposicao={p} highlight={paramsBusca.busca} />
                 ))}
               </div>
 
@@ -548,7 +475,7 @@ async function ProposicoesDiretoPage({ params }: { params: SearchParams }) {
               <div className="flex items-center justify-center gap-2 mt-8">
                 {paginaD > 1 && (
                   <a
-                    href={buildUrlDireto(params, { paginaD: String(paginaD - 1) })}
+                    href={buildUrlDireto(paramsBusca, { paginaD: String(paginaD - 1) })}
                     className="btn-secondary text-xs"
                   >
                     ← Anterior
@@ -557,7 +484,7 @@ async function ProposicoesDiretoPage({ params }: { params: SearchParams }) {
                 <span className="text-sm text-gray-500">Página {paginaD}</span>
                 {temProxima && (
                   <a
-                    href={buildUrlDireto(params, { paginaD: String(paginaD + 1) })}
+                    href={buildUrlDireto(paramsBusca, { paginaD: String(paginaD + 1) })}
                     className="btn-secondary text-xs"
                   >
                     Próxima →
@@ -591,11 +518,50 @@ function buildUrlDireto(
   current: SearchParams,
   updates: Partial<Record<keyof SearchParams, string | undefined>>
 ): string {
-  const merged = { ...current, ...updates };
+  const casaBusca =
+    updates.casaBusca === "poa"
+      ? "poa"
+      : updates.casaBusca === "federal"
+        ? "federal"
+        : current.casaBusca === "poa"
+          ? "poa"
+          : "federal";
+  const merged = sanitizeDiretoParams({ ...current, ...updates }, casaBusca);
   const p = new URLSearchParams();
   p.set("modo", "direto");
   for (const [k, v] of Object.entries(merged)) {
     if (v && k !== "modo") p.set(k, v);
   }
   return `/proposicoes?${p.toString()}`;
+}
+
+function sanitizeDiretoParams(params: SearchParams, casaBusca: "federal" | "poa"): SearchParams {
+  if (casaBusca === "federal") return { ...params, casaBusca };
+
+  return {
+    ...params,
+    casaBusca,
+    uf: undefined,
+    partido: undefined,
+    deputadoId: undefined,
+    deputadoNome: undefined,
+  };
+}
+
+function getPeriodoProtocoladosRecentes(): { dataInicio: string; dataFim: string } {
+  const dataFim = new Date();
+  const dataInicio = new Date(dataFim);
+  dataInicio.setDate(dataInicio.getDate() - PROTOCOLADOS_RECENTES_DIAS);
+
+  return {
+    dataInicio: formatApiDate(dataInicio),
+    dataFim: formatApiDate(dataFim),
+  };
+}
+
+function formatApiDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
