@@ -190,23 +190,6 @@ O módulo `camara-poa.ts` realiza scraping com [Cheerio](https://cheerio.js.org/
 
 ---
 
-## 🤖 Integração com IA (Claude)
-
-O resumo por IA usa o modelo `claude-haiku-4-5` para minimizar custos:
-
-```typescript
-// src/lib/ai/summarizer.ts
-const response = await client.messages.create({
-  model: "claude-haiku-4-5-20251001",
-  max_tokens: 600,
-  messages: [{ role: "user", content: prompt }],
-});
-```
-
-O resumo é gerado **sob demanda** (ao clicar no botão) e salvo no banco para evitar chamadas repetidas.
-
----
-
 ## 🛠️ Stack técnica
 
 | Categoria | Tecnologia |
